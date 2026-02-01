@@ -39,11 +39,7 @@
         <main class="main-content">
             <header class="main-header">
                 <h1 id="page-title">JSON Code Generator</h1>
-                <div class="header-actions">
-                    <button id="save-btn" class="btn btn-primary">
-                        <i class="fas fa-save"></i> บันทึก
-                    </button>
-                </div>
+                <!-- ย้ายปุ่มบันทึกออกจาก header -->
             </header>
 
             <div class="content-wrapper">
@@ -66,6 +62,9 @@
                             <p id="project-desc-display">คำอธิบายโปรเจค</p>
                             <div class="project-meta">
                                 <span><i class="far fa-clock"></i> อัปเดตล่าสุด: <span id="project-updated"></span></span>
+                                <span id="last-saved-message" class="last-saved-message" style="display: none;">
+                                    <i class="fas fa-check-circle"></i> บันทึกล่าสุด: <span id="last-saved-time"></span>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -75,18 +74,20 @@
                 <section class="editor-section" id="editor-section" style="display: none;">
                     <div class="card">
                         <div class="card-header">
-                            <h3>JSON Editor</h3>
-                            <!-- <div class="editor-tabs">
-                                <button class="tab-btn active" data-mode="tree">
-                                    <i class="fas fa-sitemap"></i> Tree View
+                            <div class="editor-header-left">
+                                <h3>JSON Editor</h3>
+                                <!-- Status indicator -->
+                                <div id="save-status" class="save-status">
+                                    <span id="save-indicator" class="save-indicator"></span>
+                                    <span id="save-message"></span>
+                                </div>
+                            </div>
+                            <div class="editor-header-right">
+                                <!-- ย้ายปุ่มบันทึกมาอยู่ที่นี่ -->
+                                <button id="save-btn" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> บันทึก
                                 </button>
-                                <button class="tab-btn" data-mode="code">
-                                    <i class="fas fa-code"></i> Code View
-                                </button>
-                                <button class="tab-btn" data-mode="form">
-                                    <i class="fas fa-edit"></i> Form View
-                                </button>
-                            </div> -->
+                            </div>
                         </div>
                         <div class="card-body">
                             <div id="jsoneditor" class="jsoneditor-container"></div>
@@ -101,7 +102,8 @@
                                     <i class="fas fa-trash"></i> ล้างทั้งหมด
                                 </button>
                             </div>
-                            <div id="validation-result" class="validation-result"></div>
+                            <!-- Notification area -->
+                            <div id="notification-area" class="notification-area"></div>
                         </div>
                     </div>
                 </section>
