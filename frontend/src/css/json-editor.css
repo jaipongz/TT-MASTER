@@ -1,0 +1,185 @@
+/* JSON Tree Styling */
+.json-tree {
+    padding: 1rem;
+    background: var(--card-bg);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.json-item {
+    padding-left: 20px;
+    position: relative;
+}
+
+.json-item.collapsed > .json-children {
+    display: none;
+}
+
+.json-item.expanded > .json-children {
+    display: block;
+}
+
+.json-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border-color);
+}
+
+.json-item:last-child::before {
+    height: 12px;
+}
+
+.json-toggle {
+    position: absolute;
+    left: -10px;
+    top: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+}
+
+.json-key {
+    font-weight: 600;
+}
+
+.json-value {
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.json-string::before,
+.json-string::after {
+    content: '"';
+}
+
+.json-object {
+    color: #888;
+}
+
+.json-array {
+    color: #888;
+}
+
+.json-object::after {
+    content: '{...}';
+    margin-left: 5px;
+    font-size: 0.9em;
+    opacity: 0.7;
+}
+
+.json-array::after {
+    content: '[...]';
+    margin-left: 5px;
+    font-size: 0.9em;
+    opacity: 0.7;
+}
+
+.json-empty {
+    color: #888;
+    font-style: italic;
+}
+
+/* Tree Controls */
+.tree-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tree-control-btn {
+    padding: 5px 10px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: var(--transition);
+}
+
+.tree-control-btn:hover {
+    opacity: 0.9;
+}
+
+/* JSON Search */
+.json-search {
+    margin-bottom: 15px;
+}
+
+.search-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--card-bg);
+    color: var(--text-color);
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+/* Highlight found items */
+.json-item.highlighted {
+    background-color: rgba(255, 255, 0, 0.2);
+    border-radius: 3px;
+}
+
+/* JSON Validation */
+.validation-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 10px;
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.validation-indicator.valid {
+    background: rgba(46, 204, 113, 0.2);
+    color: var(--success-color);
+}
+
+.validation-indicator.invalid {
+    background: rgba(231, 76, 60, 0.2);
+    color: var(--danger-color);
+}
+
+/* JSON Statistics */
+.json-stats {
+    display: flex;
+    gap: 15px;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+    font-size: 0.9em;
+    color: var(--text-light);
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.stat-value {
+    font-weight: bold;
+    color: var(--primary-color);
+    font-size: 1.1em;
+}
+
+.stat-label {
+    font-size: 0.8em;
+}

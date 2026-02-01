@@ -1,0 +1,64 @@
+/* Dark Theme Styles */
+body.dark-theme {
+    --primary-color: #6c8eff;
+    --secondary-color: #5a6fd8;
+    --light-bg: #1e1e1e;
+    --dark-bg: #121212;
+    --card-bg: #2d2d2d;
+    --text-color: #e0e0e0;
+    --text-light: #a0a0a0;
+    --border-color: #404040;
+    --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-theme .theme-toggle i {
+    transform: rotate(180deg);
+}
+
+body.dark-theme .json-key {
+    color: #9cdcfe;
+}
+
+body.dark-theme .json-value {
+    color: #ce9178;
+}
+
+body.dark-theme .json-string {
+    color: #ce9178;
+}
+
+body.dark-theme .json-number {
+    color: #b5cea8;
+}
+
+body.dark-theme .json-boolean {
+    color: #569cd6;
+}
+
+body.dark-theme #json-code-editor {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border-color: #404040;
+}
+
+body.dark-theme .valid-json {
+    background: rgba(46, 204, 113, 0.15);
+}
+
+body.dark-theme .invalid-json {
+    background: rgba(231, 76, 60, 0.15);
+}
+
+/* Theme transition */
+body,
+.header,
+.project-card,
+.modal-content,
+.json-editor-container,
+.tab-btn,
+.btn,
+.form-group input,
+.form-group textarea,
+#json-code-editor {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
