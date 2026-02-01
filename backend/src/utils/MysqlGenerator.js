@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const MysqlMasterGenerator = require('./MysqlMasterGenerator');
 
 class MysqlGenerator {
     static async generate(jsonSchema) {
@@ -7,10 +8,15 @@ class MysqlGenerator {
             __dirname,
             '../../temp/migrations'
         );
+        const masterSql = MysqlMasterGenerator.generate();
+        const masterFilePath = path.join(baseDir, '_master.sql');
+        fs.writeFileSync(masterFilePath, masterSql, 'utf8');
 
+        
         fs.mkdirSync(baseDir, { recursive: true });
-
-        const generatedFiles = [];
+        
+        const generatedFiles = [masterFilePath];
+        // const generatedFiles = [];
 
         for (const module of jsonSchema.module) {
             const tableName = module.tblname;
