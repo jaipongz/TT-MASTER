@@ -1,6 +1,8 @@
 const JsonSchema = require('../models/JsonSchema');
 const MigrationGenerator = require('../utils/MigrationGenerator');
 const GitService = require('../services/GitService');
+const CodeGenerator = require('../utils/CodeGenerator');
+const ProjectScaffolder = require('../utils/ProjectScaffolder');
 
 exports.saveJsonSchema = async (req, res) => {
     console.log('🔥 saveJsonSchema controller called!');
@@ -60,11 +62,17 @@ exports.saveJsonSchema = async (req, res) => {
                 error: 'schema.module must be an array'
             });
         }
+        await ProjectScaffolder.scaffold();
 
         const migrationResult =
             await MigrationGenerator.generateMigration(schema);
         console.log('✔ Migration generation result:', migrationResult);
-
+        
+        
+        const codeResult =
+            await CodeGenerator.generate(schema);
+        console.log('✔ Code generation result:', codeResult);
+        
         // ===== PUSH TO GIT =====
         const repoUrl =
             schema.setting?.repo || schema.repo;

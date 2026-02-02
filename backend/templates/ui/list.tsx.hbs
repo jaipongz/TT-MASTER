@@ -1,0 +1,23 @@
+import React from 'react';
+
+export default function {{EntityName}}List() {
+  return (
+    <div>
+      <h1>{{EntityName}} List</h1>
+
+      <table border={1} cellPadding={8}>
+        <thead>
+          <tr>
+{{#each fields}}
+            <th>{{@key}}</th>
+{{/each}}
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {/* TODO: map data */}
+        </tbody>
+      </table>
+    </div>
+  );
+}
