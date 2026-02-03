@@ -1,0 +1,20 @@
+import React from 'react';
+
+export default function {{EntityName}}Form() {
+  return (
+    <form>
+{{#each fields}}
+      <div style={{ "{marginBottom: 12}" }}>
+        <label>{{@key}}</label><br />
+{{#if this.isTextArea}}
+        <textarea name="{{@key}}" />
+{{else}}
+        <input type="text" name="{{@key}}" />
+{{/if}}
+      </div>
+{{/each}}
+
+      <button type="submit">Save</button>
+    </form>
+  );
+}
