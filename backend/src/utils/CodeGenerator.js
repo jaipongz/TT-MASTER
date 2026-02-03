@@ -7,8 +7,8 @@ class CodeGenerator {
     static async generate(schema) {
         const generatedFiles = [];
 
-        const apiTemplateDir = path.join(__dirname, '../../templates/api');
-        const uiTemplateDir = path.join(__dirname, '../../templates/ui');
+        const apiTemplateDir = path.join(__dirname, '../../templates/hbs/api');
+        const uiTemplateDir = path.join(__dirname, '../../templates/hbs/ui');
 
         const apiBaseDir = path.join(
             __dirname,
