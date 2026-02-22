@@ -71,10 +71,13 @@ ${columns},
             `.trim());
 
             // ===== MEDIA TABLES =====
+            // Drop child table first (with FK), then parent table
             sqlBlocks.push(`
 DROP TABLE IF EXISTS \`${tableName}_media_file\`;
+
 CREATE TABLE \`${tableName}_media_file\` (
   media_file_id INT AUTO_INCREMENT PRIMARY KEY,
+  ref_id BIGINT NOT NULL,
   file_gen VARCHAR(10) NOT NULL,
   file_name VARCHAR(255) NOT NULL,
   file_type VARCHAR(100),
@@ -83,20 +86,7 @@ CREATE TABLE \`${tableName}_media_file\` (
 
   INDEX idx_${tableName}_media_ref (ref_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-            `.trim());
 
-            sqlBlocks.push(`
-DROP TABLE IF EXISTS \`${tableName}_media_data\`;
-CREATE TABLE \`${tableName}_media_data\` (
-  media_data_id INT AUTO_INCREMENT PRIMARY KEY,
-  file_gen VARCHAR(10) NOT NULL,
-  file_data LONGBLOB,
-
-  CONSTRAINT fk_${tableName}_media
-    FOREIGN KEY (media_file_id)
-    REFERENCES ${tableName}_media_file(media_file_id)
-    ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             `.trim());
 
             // ===== WRITE FILE (overwrite) =====
@@ -121,18 +111,32 @@ CREATE TABLE \`${tableName}_media_data\` (
             switch (config.type) {
                 case 'image':
                     columns.push(
+                        `  \`${name}\` VARCHAR(255) ${notNull}`,
                         `  \`${name}_gen\` VARCHAR(10) ${notNull}`,
-                        `  \`${name}_name\` VARCHAR(255) ${notNull}`,
                         `  \`${name}_alt\` VARCHAR(255) NULL`
+                    );
+                    break;
+                case 'video':
+                    columns.push(
+                        `  \`${name}\` VARCHAR(255) ${notNull}`,
+                        `  \`${name}_gen\` VARCHAR(10) ${notNull}`
                     );
                     break;
 
                 case 'file':
                     columns.push(
-                        `  \`${name}_gen\` VARCHAR(10) ${notNull}`,
-                        `  \`${name}_name\` VARCHAR(255) ${notNull}`
+                        `  \`${name}\` VARCHAR(255) ${notNull}`,
+                        `  \`${name}_gen\` VARCHAR(10) ${notNull}`
                     );
                     break;
+
+                case 'fulltext':
+                    columns.push(
+                        `  \`${name}\` TEXT ${notNull}`,
+                        `  \`${name}_plain\` TEXT ${notNull}`
+                    );
+                    break;
+                
 
                 default:
                     const type = this.mapType(config);
