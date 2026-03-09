@@ -8,15 +8,14 @@ class MysqlGenerator {
             __dirname,
             '../../temp/migrations'
         );
+
+        fs.mkdirSync(baseDir, { recursive: true });
+
         const masterSql = MysqlMasterGenerator.generate();
         const masterFilePath = path.join(baseDir, '_master.sql');
         fs.writeFileSync(masterFilePath, masterSql, 'utf8');
-
-        
-        fs.mkdirSync(baseDir, { recursive: true });
         
         const generatedFiles = [masterFilePath];
-        // const generatedFiles = [];
 
         for (const module of jsonSchema.module) {
             const tableName = module.tblname;
@@ -70,30 +69,15 @@ ${columns},
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             `.trim());
 
-            // ===== MEDIA TABLES =====
-            // Drop child table first (with FK), then parent table
-            sqlBlocks.push(`
-DROP TABLE IF EXISTS \`${tableName}_media_file\`;
-
-CREATE TABLE \`${tableName}_media_file\` (
-  media_file_id INT AUTO_INCREMENT PRIMARY KEY,
-  ref_id BIGINT NOT NULL,
-  file_gen VARCHAR(10) NOT NULL,
-  file_name VARCHAR(255) NOT NULL,
-  file_type VARCHAR(100),
-  file_size INT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-  INDEX idx_${tableName}_media_ref (ref_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-            `.trim());
 
             // ===== WRITE FILE (overwrite) =====
             const filePath = path.join(baseDir, `${tableName}.sql`);
             fs.writeFileSync(filePath, sqlBlocks.join('\n\n'), 'utf8');
 
             generatedFiles.push(filePath);
+
+            const childFiles = this.generateChildTables(baseDir, module);
+            generatedFiles.push(...childFiles);
         }
 
         return {
@@ -148,6 +132,115 @@ CREATE TABLE \`${tableName}_media_file\` (
 
         return columns.join(',\n');
     }
+
+        static generateChildTables(baseDir, module) {
+                const childFiles = [];
+                const childs = module.childs || {};
+
+                for (const [childName, childConfig] of Object.entries(childs)) {
+                        if (!childConfig || typeof childConfig !== 'object') continue;
+
+                        if (childConfig.type === 'gallery') {
+                                const filePath = path.join(baseDir, `${childName}.sql`);
+                                fs.writeFileSync(
+                                        filePath,
+                                        this.buildGalleryChildSql(childName),
+                                        'utf8'
+                                );
+                                childFiles.push(filePath);
+                        }
+
+                        if (childConfig.type === 'child') {
+                                const childFields = childConfig.fields || {};
+                                const filePath = path.join(baseDir, `${childName}.sql`);
+                                fs.writeFileSync(
+                                        filePath,
+                                        this.buildStandardChildSql(childName, childFields),
+                                        'utf8'
+                                );
+                                childFiles.push(filePath);
+                        }
+                }
+
+                return childFiles;
+        }
+
+        static buildGalleryChildSql(childName) {
+                return `
+DROP TABLE IF EXISTS \`${childName}\`;
+CREATE TABLE \`${childName}\` (
+    \`${childName}_id\` BIGINT PRIMARY KEY,
+    obj_parent_id BIGINT NOT NULL,
+    obj_file VARCHAR(255) NOT NULL,
+    obj_file_gen VARCHAR(10) NOT NULL,
+    obj_priority INT NOT NULL DEFAULT 0,
+    obj_created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    obj_created_by INT NOT NULL,
+
+    INDEX idx_${childName}_parent (obj_parent_id),
+    INDEX idx_${childName}_priority (obj_priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP TABLE IF EXISTS \`${childName}_draft\`;
+CREATE TABLE \`${childName}_draft\` (
+    \`${childName}_id\` BIGINT PRIMARY KEY,
+    obj_parent_id BIGINT NOT NULL,
+    obj_file VARCHAR(255) NOT NULL,
+    obj_file_gen VARCHAR(10) NOT NULL,
+    obj_priority INT NOT NULL DEFAULT 0,
+    obj_created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    obj_created_by INT NOT NULL,
+
+    INDEX idx_${childName}_draft_parent (obj_parent_id),
+    INDEX idx_${childName}_draft_priority (obj_priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                `.trim();
+        }
+
+        static buildStandardChildSql(childName, fields) {
+                const columns = this.generateColumns(fields);
+
+                return `
+DROP TABLE IF EXISTS \`${childName}\`;
+CREATE TABLE \`${childName}\` (
+    \`${childName}_id\` BIGINT PRIMARY KEY,
+${columns ? `${columns},\n` : ''}  obj_parent_id BIGINT NOT NULL,
+    obj_lang VARCHAR(10) NOT NULL,
+    obj_content_id INT NOT NULL,
+    obj_created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    obj_created_by INT NOT NULL,
+    obj_published_date TIMESTAMP NULL DEFAULT NULL,
+    obj_published_by INT DEFAULT NULL,
+
+    INDEX idx_${childName}_parent (obj_parent_id),
+    INDEX idx_${childName}_lang (obj_lang),
+    INDEX idx_${childName}_content (obj_content_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP TABLE IF EXISTS \`${childName}_draft\`;
+CREATE TABLE \`${childName}_draft\` (
+    \`${childName}_id\` BIGINT PRIMARY KEY,
+${columns ? `${columns},\n` : ''}  obj_parent_id BIGINT NOT NULL,
+    obj_status VARCHAR(10) NOT NULL,
+    obj_state VARCHAR(10) NOT NULL,
+    obj_lang VARCHAR(10) NOT NULL,
+    obj_rev INT NOT NULL,
+    obj_content_id INT NOT NULL,
+    obj_created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    obj_created_by INT NOT NULL,
+    obj_modified_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    obj_modified_by INT NOT NULL,
+    obj_published_date TIMESTAMP NULL DEFAULT NULL,
+    obj_published_by INT DEFAULT NULL,
+
+    INDEX idx_${childName}_draft_parent (obj_parent_id),
+    INDEX idx_${childName}_draft_status (obj_status),
+    INDEX idx_${childName}_draft_state (obj_state),
+    INDEX idx_${childName}_draft_lang (obj_lang),
+    INDEX idx_${childName}_draft_content (obj_content_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                `.trim();
+        }
 
 
     static mapType(config) {
