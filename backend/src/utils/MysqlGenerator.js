@@ -38,7 +38,8 @@ ${columns},
   obj_created_by INT NOT NULL,
   obj_published_date DATETIME  NULL DEFAULT NULL,
   obj_published_by INT DEFAULT NULL,
-
+  
+  PRIMARY KEY (${tableName}_id, obj_lang, obj_rev),
   INDEX idx_${tableName}_lang (obj_lang),
   INDEX idx_${tableName}_content (obj_content_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -48,7 +49,7 @@ ${columns},
             sqlBlocks.push(`
 DROP TABLE IF EXISTS \`${tableName}_draft\`;
 CREATE TABLE \`${tableName}_draft\` (
-  \`${tableName}_id\` BIGINT PRIMARY KEY,
+  \`${tableName}_id\` BIGINT NOT NULL,
 ${columns},
   obj_status VARCHAR(10) NOT NULL,
   obj_state VARCHAR(10) NOT NULL,
@@ -62,6 +63,7 @@ ${columns},
   obj_published_date DATETIME NULL DEFAULT NULL,
   obj_published_by INT DEFAULT NULL,
 
+  PRIMARY KEY (${tableName}_id, obj_lang, obj_rev),
   INDEX idx_${tableName}_draft_status (obj_status),
   INDEX idx_${tableName}_draft_state (obj_state),
   INDEX idx_${tableName}_draft_lang (obj_lang),
@@ -174,23 +176,27 @@ CREATE TABLE \`${childName}\` (
     obj_file VARCHAR(255) NOT NULL,
     obj_file_gen VARCHAR(10) NOT NULL,
     obj_priority INT NOT NULL DEFAULT 0,
+    obj_lang VARCHAR(10) NOT NULL,
     obj_created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     obj_created_by INT NOT NULL,
-
+    
     INDEX idx_${childName}_parent (obj_parent_id),
     INDEX idx_${childName}_priority (obj_priority)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 DROP TABLE IF EXISTS \`${childName}_draft\`;
 CREATE TABLE \`${childName}_draft\` (
-    \`${childName}_id\` BIGINT PRIMARY KEY,
+    \`${childName}_id\` BIGINT NOT NULL,
     obj_parent_id BIGINT NOT NULL,
     obj_file VARCHAR(255) NOT NULL,
     obj_file_gen VARCHAR(10) NOT NULL,
     obj_priority INT NOT NULL DEFAULT 0,
+    obj_lang VARCHAR(10) NOT NULL,
+    obj_rev INT NOT NULL,
     obj_created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     obj_created_by INT NOT NULL,
 
+    PRIMARY KEY (${childName}_id, obj_lang, obj_rev),
     INDEX idx_${childName}_draft_parent (obj_parent_id),
     INDEX idx_${childName}_draft_priority (obj_priority)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -206,7 +212,7 @@ CREATE TABLE \`${childName}\` (
     \`${childName}_id\` BIGINT PRIMARY KEY,
 ${columns ? `${columns},\n` : ''}  obj_parent_id BIGINT NOT NULL,
     obj_lang VARCHAR(10) NOT NULL,
-    obj_content_id INT NOT NULL,
+    obj_content_id BIGINT NOT NULL,
     obj_created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     obj_created_by INT NOT NULL,
     obj_published_date DATETIME NULL DEFAULT NULL,
@@ -219,20 +225,21 @@ ${columns ? `${columns},\n` : ''}  obj_parent_id BIGINT NOT NULL,
 
 DROP TABLE IF EXISTS \`${childName}_draft\`;
 CREATE TABLE \`${childName}_draft\` (
-    \`${childName}_id\` BIGINT PRIMARY KEY,
+    \`${childName}_id\` BIGINT NOT NULL,
 ${columns ? `${columns},\n` : ''}  obj_parent_id BIGINT NOT NULL,
     obj_status VARCHAR(10) NOT NULL,
     obj_state VARCHAR(10) NOT NULL,
     obj_lang VARCHAR(10) NOT NULL,
     obj_rev INT NOT NULL,
-    obj_content_id INT NOT NULL,
+    obj_content_id BIGINT NOT NULL,
     obj_created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     obj_created_by INT NOT NULL,
     obj_modified_date DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     obj_modified_by INT NOT NULL,
     obj_published_date DATETIME NULL DEFAULT NULL,
     obj_published_by INT DEFAULT NULL,
-
+    
+    PRIMARY KEY (${childName}_id, obj_lang, obj_rev),
     INDEX idx_${childName}_draft_parent (obj_parent_id),
     INDEX idx_${childName}_draft_status (obj_status),
     INDEX idx_${childName}_draft_state (obj_state),
