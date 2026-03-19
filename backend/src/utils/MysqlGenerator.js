@@ -30,7 +30,7 @@ class MysqlGenerator {
             sqlBlocks.push(`
 DROP TABLE IF EXISTS \`${tableName}\`;
 CREATE TABLE \`${tableName}\` (
-  \`${tableName}_id\` BIGINT PRIMARY KEY,
+  \`${tableName}_id\` BIGINT,
 ${columns},
   obj_lang VARCHAR(10) NOT NULL,
   obj_content_id BIGINT NOT NULL,
@@ -39,7 +39,7 @@ ${columns},
   obj_published_date DATETIME  NULL DEFAULT NULL,
   obj_published_by INT DEFAULT NULL,
   
-  PRIMARY KEY (${tableName}_id, obj_lang, obj_rev),
+  PRIMARY KEY (${tableName}_id, obj_lang),
   INDEX idx_${tableName}_lang (obj_lang),
   INDEX idx_${tableName}_content (obj_content_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -71,15 +71,19 @@ ${columns},
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             `.trim());
 
+            // ===== CHILD TABLES (append into same module file) =====
+            const childSqlBlocks = this.generateChildTables(module);
+            sqlBlocks.push(...childSqlBlocks);
+
+            // ===== MODULE PERMISSION SEEDER =====
+            sqlBlocks.push(this.buildPermissionSeeder(module));
+
 
             // ===== WRITE FILE (overwrite) =====
             const filePath = path.join(baseDir, `${tableName}.sql`);
             fs.writeFileSync(filePath, sqlBlocks.join('\n\n'), 'utf8');
 
             generatedFiles.push(filePath);
-
-            const childFiles = this.generateChildTables(baseDir, module);
-            generatedFiles.push(...childFiles);
         }
 
         return {
@@ -135,36 +139,26 @@ ${columns},
         return columns.join(',\n');
     }
 
-        static generateChildTables(baseDir, module) {
-                const childFiles = [];
+        static generateChildTables(module) {
+            const childSqlBlocks = [];
                 const childs = module.childs || {};
 
                 for (const [childName, childConfig] of Object.entries(childs)) {
                         if (!childConfig || typeof childConfig !== 'object') continue;
 
                         if (childConfig.type === 'gallery') {
-                                const filePath = path.join(baseDir, `${childName}.sql`);
-                                fs.writeFileSync(
-                                        filePath,
-                                        this.buildGalleryChildSql(childName),
-                                        'utf8'
-                                );
-                                childFiles.push(filePath);
+                    childSqlBlocks.push(this.buildGalleryChildSql(childName));
                         }
 
                         if (childConfig.type === 'child') {
                                 const childFields = childConfig.fields || {};
-                                const filePath = path.join(baseDir, `${childName}.sql`);
-                                fs.writeFileSync(
-                                        filePath,
-                                        this.buildStandardChildSql(childName, childFields),
-                                        'utf8'
-                                );
-                                childFiles.push(filePath);
+                    childSqlBlocks.push(
+                        this.buildStandardChildSql(childName, childFields)
+                    );
                         }
                 }
 
-                return childFiles;
+            return childSqlBlocks;
         }
 
         static buildGalleryChildSql(childName) {
@@ -267,6 +261,52 @@ ${columns ? `${columns},\n` : ''}  obj_parent_id BIGINT NOT NULL,
             default:
                 return 'VARCHAR(255)';
         }
+    }
+
+    static buildPermissionSeeder(module) {
+        const tableName = module.tblname;
+        const moduleKey = (module.permission_prefix || tableName || '').toLowerCase();
+        const actions = ['create', 'read', 'update', 'delete'];
+
+        if (this.isDynamicModule(module)) {
+            actions.push('export', 'publish');
+        }
+
+        const permissionRows = actions
+            .map(action => {
+                const permissionName = `${moduleKey}.${action}`;
+                const description = `Can ${action} ${tableName}`;
+                return `('${permissionName}', '${description}', '${tableName}', '${action}')`;
+            })
+            .join(',\n');
+
+        const permissionNames = actions
+            .map(action => `'${moduleKey}.${action}'`)
+            .join(', ');
+
+        return `
+-- Module permissions: ${tableName}
+INSERT IGNORE INTO \`wcm_permissions\` (\`name\`, \`description\`, \`module\`, \`action\`) VALUES
+${permissionRows};
+
+INSERT IGNORE INTO \`wcm_role_permissions\` (\`role_id\`, \`permission_id\`)
+SELECT 1, p.id
+FROM \`wcm_permissions\` p
+WHERE p.name IN (${permissionNames});
+        `.trim();
+    }
+
+    static isDynamicModule(module) {
+        if (module?.approval_mode === 'On' || module?.preview_mode === 'On') {
+            return true;
+        }
+
+        if (module?.export?.type) {
+            return true;
+        }
+
+        const fields = module?.fields || {};
+        return Object.values(fields).some(field => field?.mode?.type === 'lookup');
     }
 
 }
