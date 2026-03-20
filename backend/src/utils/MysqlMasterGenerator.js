@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS \`wcm_permissions\` (
   \`name\` VARCHAR(255) NOT NULL UNIQUE,
   \`description\` TEXT NULL,
   \`module\` VARCHAR(100) NOT NULL,
+  \`module_name\` VARCHAR(150) NOT NULL,
   \`action\` VARCHAR(50) NOT NULL,
   \`createdAt\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (\`id\`)
@@ -67,15 +68,15 @@ CREATE TABLE IF NOT EXISTS \`wcm_user_permissions\` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insert Sample Permissions
-INSERT INTO \`wcm_permissions\` (\`name\`, \`description\`, \`module\`, \`action\`) VALUES
-('user.create', 'Can create users', 'user', 'create'),
-('user.read', 'Can read users', 'user', 'read'),
-('user.update', 'Can update users', 'user', 'update'),
-('user.delete', 'Can delete users', 'user', 'delete'),
-('role.create', 'Can create roles', 'role', 'create'),
-('role.read', 'Can read roles', 'role', 'read'),
-('role.update', 'Can update roles', 'role', 'update'),
-('role.delete', 'Can delete roles', 'role', 'delete');
+INSERT INTO \`wcm_permissions\` (\`name\`, \`description\`, \`module\`, \`module_name\`, \`action\`) VALUES
+('user.create', 'Can create users', 'user', 'CMS User', 'create'),
+('user.read', 'Can read users', 'user', 'CMS User', 'read'),
+('user.update', 'Can update users', 'user', 'CMS User', 'update'),
+('user.delete', 'Can delete users', 'user', 'CMS User', 'delete'),
+('role.create', 'Can create roles', 'role', 'Role', 'create'),
+('role.read', 'Can read roles', 'role', 'Role', 'read'),
+('role.update', 'Can update roles', 'role', 'Role', 'update'),
+('role.delete', 'Can delete roles', 'role', 'Role', 'delete');
 
 -- Insert Sample Roles
 INSERT INTO \`wcm_roles\` (\`name\`, \`description\`) VALUES

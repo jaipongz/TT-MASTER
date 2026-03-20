@@ -266,6 +266,9 @@ ${columns ? `${columns},\n` : ''}  obj_parent_id BIGINT NOT NULL,
     static buildPermissionSeeder(module) {
         const tableName = module.tblname;
         const moduleKey = (module.permission_prefix || tableName || '').toLowerCase();
+        const moduleName = module.title || 'Module';
+        const tableNameSql = this.escapeSqlValue(tableName);
+        const moduleNameSql = this.escapeSqlValue(moduleName);
         const actions = ['create', 'read', 'update', 'delete'];
 
         if (this.isDynamicModule(module)) {
@@ -276,17 +279,23 @@ ${columns ? `${columns},\n` : ''}  obj_parent_id BIGINT NOT NULL,
             .map(action => {
                 const permissionName = `${moduleKey}.${action}`;
                 const description = `Can ${action} ${tableName}`;
-                return `('${permissionName}', '${description}', '${tableName}', '${action}')`;
+                return `('${this.escapeSqlValue(permissionName)}', '${this.escapeSqlValue(description)}', '${tableNameSql}', '${moduleNameSql}', '${this.escapeSqlValue(action)}')`;
             })
             .join(',\n');
 
         const permissionNames = actions
-            .map(action => `'${moduleKey}.${action}'`)
+            .map(action => `'${this.escapeSqlValue(`${moduleKey}.${action}`)}'`)
             .join(', ');
 
         return `
 -- Module permissions: ${tableName}
-INSERT IGNORE INTO \`wcm_permissions\` (\`name\`, \`description\`, \`module\`, \`action\`) VALUES
+DELETE rp
+FROM \`wcm_role_permissions\` rp
+INNER JOIN \`wcm_permissions\` p ON p.id = rp.permission_id
+WHERE p.\`module\` = '${tableNameSql}';
+
+DELETE FROM \`wcm_permissions\` WHERE \`module\` = '${tableNameSql}';
+INSERT IGNORE INTO \`wcm_permissions\` (\`name\`, \`description\`, \`module\`, \`module_name\`, \`action\`) VALUES
 ${permissionRows};
 
 INSERT IGNORE INTO \`wcm_role_permissions\` (\`role_id\`, \`permission_id\`)
@@ -294,6 +303,10 @@ SELECT 1, p.id
 FROM \`wcm_permissions\` p
 WHERE p.name IN (${permissionNames});
         `.trim();
+    }
+
+    static escapeSqlValue(value) {
+        return String(value ?? '').replace(/'/g, "''");
     }
 
     static isDynamicModule(module) {
