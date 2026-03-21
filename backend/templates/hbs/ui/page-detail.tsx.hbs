@@ -1,0 +1,32 @@
+import { useMemo } from 'react'
+import { useRouter } from 'next/router'
+import GenericDetailForm from '../../components/forms/GenericDetailForm'
+import { {{uiFormConfigName}} } from '../../config/forms/{{uiFormConfigName}}'
+import { {{uiCustomFormConfigName}} } from '../../config/forms/custom/{{uiCustomFormConfigName}}'
+import { resolveFormConfig } from '../../config/forms/resolveFormConfig'
+
+const module_name = '{{fileName}}'
+
+export default function {{uiPageClassName}}DetailPage() {
+  const router = useRouter()
+  const { id } = router.query
+  const isNew = id === 'new'
+  const modeParam = typeof router.query.mode === 'string' ? router.query.mode : undefined
+  const mode = isNew ? 'add' : modeParam === 'view' ? 'view' : 'edit'
+  const readOnly = mode === 'view'
+
+  const formConfig = useMemo(() => resolveFormConfig({{uiFormConfigName}}, {{uiCustomFormConfigName}}), [])
+
+  return (
+    <GenericDetailForm
+      id={id}
+      endpoint={`/${module_name}`}
+      isNew={isNew}
+      formConfig={formConfig}
+      initialData={undefined}
+      title={isNew ? 'Create {{moduleTitle}}' : readOnly ? 'View {{moduleTitle}}' : 'Edit {{moduleTitle}}'}
+      readOnly={readOnly}
+      showBottomSaveBar={false}
+    />
+  )
+}

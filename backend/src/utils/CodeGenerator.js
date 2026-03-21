@@ -2,107 +2,62 @@
 const fs = require('fs');
 const path = require('path');
 const Handlebars = require('handlebars');
+const ContextBuilder = require('./codegen/helpers/ContextBuilder');
+const OutputPlanner = require('./codegen/OutputPlanner');
+const AppModuleUpdater = require('./codegen/AppModuleUpdater');
 
 class CodeGenerator {
-    static async generate(schema) {
+    // Orchestrate template rendering for API/UI and module registration.
+    static async generate(schema, options = {}) {
         const generatedFiles = [];
+        const workspaceDir =
+            options.workspaceDir ||
+            path.join(__dirname, '../../temp/default-project');
 
         const apiTemplateDir = path.join(__dirname, '../../templates/hbs/api');
         const uiTemplateDir = path.join(__dirname, '../../templates/hbs/ui');
 
         const apiBaseDir = path.join(
-            __dirname,
-            '../../temp/api/src/modules'
+            workspaceDir,
+            'api/src/modules'
         );
 
         const uiBaseDir = path.join(
-            __dirname,
-            '../../temp/ui/app/modules'
+            workspaceDir,
+            'ui'
         );
 
         fs.mkdirSync(apiBaseDir, { recursive: true });
         fs.mkdirSync(uiBaseDir, { recursive: true });
 
         for (const module of schema.module) {
-            const context = this.buildContext(module);
+            const context = ContextBuilder.build(module);
+            const outputPlan = OutputPlanner.plan(context);
 
-            const moduleApiDir = path.join(apiBaseDir, context.fileName);
-            const moduleUiDir = path.join(uiBaseDir, context.fileName);
+            for (const item of outputPlan) {
+                const templateDir = item.templateType === 'api'
+                    ? apiTemplateDir
+                    : uiTemplateDir;
 
-            fs.mkdirSync(moduleApiDir, { recursive: true });
-            fs.mkdirSync(moduleUiDir, { recursive: true });
+                const baseOutDir = item.templateType === 'api'
+                    ? apiBaseDir
+                    : uiBaseDir;
 
-            // ===== API =====
-            generatedFiles.push(
-                this.render(
-                    apiTemplateDir,
-                    'controller.hbs',
-                    moduleApiDir,
-                    `${context.fileName}.controller.ts`,
-                    context
-                )
-            );
+                const outDir = path.join(baseOutDir, item.outDir);
+                fs.mkdirSync(outDir, { recursive: true });
 
-            generatedFiles.push(
-                this.render(
-                    apiTemplateDir,
-                    'service.hbs',
-                    moduleApiDir,
-                    `${context.fileName}.service.ts`,
-                    context
-                )
-            );
+                generatedFiles.push(
+                    this.render(
+                        templateDir,
+                        item.templateFile,
+                        outDir,
+                        item.outFile,
+                        item.context
+                    )
+                );
+            }
 
-            generatedFiles.push(
-                this.render(
-                    apiTemplateDir,
-                    'module.hbs',
-                    moduleApiDir,
-                    `${context.fileName}.module.ts`,
-                    context
-                )
-            );
-
-            generatedFiles.push(
-                this.render(
-                    apiTemplateDir,
-                    'dto.hbs',
-                    moduleApiDir,
-                    `dto.ts`,
-                    context
-                )
-            );
-
-            // ===== UI =====
-            generatedFiles.push(
-                this.render(
-                    uiTemplateDir,
-                    'list.tsx.hbs',
-                    moduleUiDir,
-                    `page.tsx`,
-                    context
-                )
-            );
-
-            generatedFiles.push(
-                this.render(
-                    uiTemplateDir,
-                    'form.tsx.hbs',
-                    moduleUiDir,
-                    `form.tsx`,
-                    context
-                )
-            );
-
-            generatedFiles.push(
-                this.render(
-                    uiTemplateDir,
-                    'api.ts.hbs',
-                    moduleUiDir,
-                    `api.ts`,
-                    context
-                )
-            );
+            AppModuleUpdater.registerModule({ workspaceDir, context });
         }
 
         return {
@@ -126,59 +81,6 @@ class CodeGenerator {
         return filePath;
     }
 
-    static buildContext(module) {
-        const entityName = this.pascal(module.tblname);
-        const fileName = this.kebab(module.tblname);
-
-        return {
-            EntityName: entityName,
-            ControllerName: `${entityName}Controller`,
-            ServiceName: `${entityName}Service`,
-            ModuleName: `${entityName}Module`,
-            fileName,
-            routeName: fileName,
-            camelName: this.camel(module.tblname),
-            fields: this.mapFields(module.fields || {})
-        };
-    }
-
-    static mapFields(fields) {
-        const result = {};
-        for (const [name, config] of Object.entries(fields)) {
-            result[name] = {
-                tsType: this.mapTsType(config.type),
-                isTextArea: config.type === 'moretext'
-            };
-        }
-        return result;
-    }
-
-    static mapTsType(type) {
-        switch (type) {
-            case 'number':
-            case 'decimal':
-                return 'number';
-            default:
-                return 'string';
-        }
-    }
-
-    // ===== naming utils =====
-    static pascal(str) {
-        return str
-            .split('_')
-            .map(s => s.charAt(0).toUpperCase() + s.slice(1))
-            .join('');
-    }
-
-    static camel(str) {
-        const p = this.pascal(str);
-        return p.charAt(0).toLowerCase() + p.slice(1);
-    }
-
-    static kebab(str) {
-        return str.replace(/_/g, '-');
-    }
 }
 
 module.exports = CodeGenerator;

@@ -3,10 +3,14 @@ const path = require('path');
 const MysqlMasterGenerator = require('./MysqlMasterGenerator');
 
 class MysqlGenerator {
-    static async generate(jsonSchema) {
+    static async generate(jsonSchema, options = {}) {
+        const workspaceDir =
+            options.workspaceDir ||
+            path.join(__dirname, '../../temp/default-project');
+
         const baseDir = path.join(
-            __dirname,
-            '../../temp/migrations'
+            workspaceDir,
+            'migrations'
         );
 
         fs.mkdirSync(baseDir, { recursive: true });

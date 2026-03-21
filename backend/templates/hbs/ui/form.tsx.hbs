@@ -3,13 +3,13 @@ import React from 'react';
 export default function {{EntityName}}Form() {
   return (
     <form>
-{{#each fields}}
-      <div style={{ "{marginBottom: 12}" }}>
-        <label>{{@key}}</label><br />
+{{#each fieldList}}
+  <div className="field-row">
+  <label>{{this.label}}</label><br />
 {{#if this.isTextArea}}
-        <textarea name="{{@key}}" />
+  <textarea name="{{this.name}}" />
 {{else}}
-        <input type="text" name="{{@key}}" />
+  <input type="{{this.uiControl}}" name="{{this.name}}" />
 {{/if}}
       </div>
 {{/each}}

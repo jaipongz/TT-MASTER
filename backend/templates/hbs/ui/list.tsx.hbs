@@ -8,8 +8,8 @@ export default function {{EntityName}}List() {
       <table border={1} cellPadding={8}>
         <thead>
           <tr>
-{{#each fields}}
-            <th>{{@key}}</th>
+{{#each fieldList}}
+            <th>{{this.name}}</th>
 {{/each}}
             <th>Actions</th>
           </tr>

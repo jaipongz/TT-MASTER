@@ -1,8 +1,19 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { {{ControllerName}} } from './{{fileName}}.controller';
 import { {{ServiceName}} } from './{{fileName}}.service';
+{{#each moduleEntities}}
+import { {{this.entityName}} } from './{{this.fileName}}.entity';
+{{/each}}
 
 @Module({
+  imports: [
+    TypeOrmModule.forFeature([
+{{#each moduleEntities}}
+      {{this.entityName}},
+{{/each}}
+    ]),
+  ],
   controllers: [{{ControllerName}}],
   providers: [{{ServiceName}}],
 })

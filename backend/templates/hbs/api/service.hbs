@@ -1,10 +1,601 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-import { BaseCrudService } from '../../common/base-crud.service';
+import { Injectable, Logger } from '@nestjs/common'
+import { InjectRepository } from '@nestjs/typeorm'
+import { Brackets, Repository, SelectQueryBuilder } from 'typeorm'
+import { promises as fs } from 'fs'
+import * as path from 'path'
+import { {{EntityName}} } from './{{fileName}}.entity'
+import { {{EntityName}}Draft } from './{{fileName}}-draft.entity'
+import { {{CreateDtoName}} } from './dto/create-{{fileName}}.dto'
+import { {{UpdateDtoName}} } from './dto/update-{{fileName}}.dto'
+import { OMDatetime } from '../../common/utils/OMDatetime.util'
+import { OMUtilts } from '../../common/utils/OMUtilts.util'
+
+type LookupOption = {
+    value: string
+    label: string
+}
+
+type LookupResponse = {
+    field: string
+    lang: string
+    options: LookupOption[]
+}
+
+type ListQueryInput = {
+    page?: string | number
+    pageSize?: string | number
+    search?: string
+    searchFields?: string | string[]
+    sortField?: string
+    sortDirection?: string
+    filters?: Record<string, unknown>
+    [key: string]: unknown
+}
+
+type NormalizedListQuery = {
+    page: number
+    pageSize: number
+    search: string
+    searchFields: string[]
+    sortField: string
+    sortDirection: 'ASC' | 'DESC'
+    filters: Record<string, string[]>
+}
+
+type ListActionInput = {
+    action?: string
+    ids?: Array<string | number>
+    state?: string
+}
+
+type TableLookupConfig = {
+    tableName: string
+    valueColumn: string
+    labelColumn: string
+    labelColumnByLang?: {
+        th?: string
+        en?: string
+    }
+    whereSql?: string
+    langColumn?: string
+    orderBy?: {
+        column: string
+        direction?: 'ASC' | 'DESC'
+    }
+}
 
 @Injectable()
-export class {{ServiceName}} extends BaseCrudService<any> {
-    constructor(prisma: PrismaService) {
-        super(prisma, prisma.{{camelName}});
+export class {{ServiceName}} {
+    private readonly logger = new Logger({{ServiceName}}.name)
+    private readonly siteSettingsPath = path.join(process.cwd(), 'config', 'site-settings.json')
+    private readonly tableLookupMap: Record<string, TableLookupConfig> = {
+{{#each fieldList}}
+{{#if this.dynamicLookup}}
+        {{this.name}}: {
+            tableName: '{{this.dynamicLookup.tableName}}',
+            valueColumn: '{{this.dynamicLookup.valueColumn}}',
+            labelColumn: '{{this.dynamicLookup.labelColumn}}',
+{{#if this.dynamicLookup.whereSql}}
+            whereSql: '{{this.dynamicLookup.whereSql}}',
+{{/if}}
+            orderBy: {
+                column: '{{this.dynamicLookup.orderByColumn}}',
+                direction: '{{this.dynamicLookup.orderByDirection}}',
+            },
+        },
+{{/if}}
+{{/each}}
+    }
+    private readonly listFieldMap: Record<string, keyof {{EntityName}}Draft> = {
+        {{fileName}}_id: '{{camelName}}Id',
+{{#each fieldList}}
+        {{this.name}}: '{{this.propertyName}}',
+{{/each}}
+        obj_state: 'objState',
+        obj_lang: 'objLang',
+        obj_modified_date: 'objModifiedDate',
+        obj_created_date: 'objCreatedDate',
+        obj_content_id: 'objContentId',
+    }
+
+    constructor(
+        @InjectRepository({{EntityName}})
+        private mainRepository: Repository<{{EntityName}}>,
+        @InjectRepository({{EntityName}}Draft)
+        private draftRepository: Repository<{{EntityName}}Draft>,
+    ) {}
+
+    private resolveLang(lang?: string): string {
+        const normalized = String(lang || '').trim().toLowerCase()
+        return normalized || 'en'
+    }
+
+    private async queryTableLookup(config: TableLookupConfig, lang: string): Promise<LookupOption[]> {
+        const labelColumn = config.labelColumn
+        const valueColumn = config.valueColumn
+
+        const qb = this.draftRepository.manager
+            .createQueryBuilder()
+            .select(`${config.tableName}.${valueColumn}`, 'value')
+            .addSelect(`${config.tableName}.${labelColumn}`, 'label')
+            .from(config.tableName, config.tableName)
+
+        const orderByColumn = config.orderBy?.column || labelColumn
+        const orderByDirection = String(config.orderBy?.direction || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
+
+        if (config.whereSql && config.whereSql.trim() !== '') {
+            qb.where(config.whereSql)
+        }
+
+        if (config.langColumn && lang !== '') {
+            qb.andWhere(`${config.tableName}.${config.langColumn} = :lang`, { lang })
+        }
+
+        qb.orderBy(`${config.tableName}.${orderByColumn}`, orderByDirection as 'ASC' | 'DESC')
+
+        const rows = await qb.getRawMany<{ value: string | number; label: string }>()
+
+        return rows.map((row) => ({
+            value: String(row.value),
+            label: String(row.label || row.value),
+        }))
+    }
+
+    private toPositiveInt(value: unknown, fallback: number): number {
+        const parsed = Number(value)
+        if (!Number.isFinite(parsed)) return fallback
+        const normalized = Math.floor(parsed)
+        return normalized > 0 ? normalized : fallback
+    }
+
+    private parseSearchFields(input: unknown): string[] {
+        if (Array.isArray(input)) {
+            return input.map((item) => String(item).trim()).filter(Boolean)
+        }
+
+        const raw = String(input ?? '').trim()
+        if (!raw) return []
+        return raw.split(',').map((item) => item.trim()).filter(Boolean)
+    }
+
+    private toStringArray(value: unknown): string[] {
+        if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean)
+        const raw = String(value ?? '').trim()
+        if (!raw) return []
+
+        try {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean)
+        } catch {
+            // ignore JSON parse errors and fallback to comma-split
+        }
+
+        return raw.split(',').map((item) => item.trim()).filter(Boolean)
+    }
+
+    private parseFilters(query: ListQueryInput): Record<string, string[]> {
+        const result: Record<string, string[]> = {}
+
+        const incomingFilters = query.filters
+        if (incomingFilters && typeof incomingFilters === 'object' && !Array.isArray(incomingFilters)) {
+            Object.entries(incomingFilters).forEach(([key, raw]) => {
+                const values = this.toStringArray(raw)
+                if (values.length > 0) result[key] = values
+            })
+        }
+
+        Object.entries(query).forEach(([key, rawValue]) => {
+            if (!key.startsWith('filter_')) return
+            const field = key.replace(/^filter_/, '').trim()
+            if (!field) return
+            const values = this.toStringArray(rawValue)
+            if (values.length > 0) result[field] = values
+        })
+
+        return result
+    }
+
+    private normalizeQuery(query?: ListQueryInput): NormalizedListQuery {
+        const page = this.toPositiveInt(query?.page, 1)
+        const pageSize = Math.min(200, this.toPositiveInt(query?.pageSize, 15))
+        const search = String(query?.search ?? '').trim()
+        const searchFields = this.parseSearchFields(query?.searchFields)
+        const sortField = String(query?.sortField || 'obj_modified_date').trim()
+        const sortDirection = String(query?.sortDirection || 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
+        const filters = this.parseFilters(query || {})
+
+        return { page, pageSize, search, searchFields, sortField, sortDirection, filters }
+    }
+
+    private resolveColumn(field: string): keyof {{EntityName}}Draft | undefined {
+        const raw = String(field || '').trim()
+        if (!raw) return undefined
+        return this.listFieldMap[raw]
+    }
+
+    private applySearch(qb: SelectQueryBuilder<{{EntityName}}Draft>, term: string, fields: string[]): void {
+        if (!term) return
+
+        const resolvedColumns = fields
+            .map((field) => this.resolveColumn(field))
+            .filter((field): field is keyof {{EntityName}}Draft => Boolean(field))
+
+        const fallback = ['obj_state']
+            .map((field) => this.resolveColumn(field))
+            .filter((field): field is keyof {{EntityName}}Draft => Boolean(field))
+
+        const targets = resolvedColumns.length > 0 ? resolvedColumns : fallback
+        if (!targets.length) return
+
+        qb.andWhere(
+            new Brackets((where) => {
+                targets.forEach((column, index) => {
+                    const clause = `LOWER(COALESCE(CAST(d.${String(column)} AS CHAR), '')) LIKE :searchTerm`
+                    if (index === 0) {
+                        where.where(clause, { searchTerm: `%${term.toLowerCase()}%` })
+                    } else {
+                        where.orWhere(clause, { searchTerm: `%${term.toLowerCase()}%` })
+                    }
+                })
+            }),
+        )
+    }
+
+    private applyFilters(qb: SelectQueryBuilder<{{EntityName}}Draft>, filters: Record<string, string[]>): void {
+        Object.entries(filters).forEach(([field, values]) => {
+            if (!values.length) return
+            const column = this.resolveColumn(field)
+            if (!column) return
+
+            const paramName = `filter_${String(column)}`
+            if (values.length === 1) {
+                qb.andWhere(`d.${String(column)} = :${paramName}`, { [paramName]: values[0] })
+            } else {
+                qb.andWhere(`d.${String(column)} IN (:...${paramName})`, { [paramName]: values })
+            }
+        })
+    }
+
+    private applySort(qb: SelectQueryBuilder<{{EntityName}}Draft>, sortField: string, sortDirection: 'ASC' | 'DESC'): void {
+        const column = this.resolveColumn(sortField) || this.resolveColumn('obj_modified_date') || 'objModifiedDate'
+        qb.orderBy(`d.${String(column)}`, sortDirection)
+    }
+
+    private buildListQuery(query?: ListQueryInput): { qb: SelectQueryBuilder<{{EntityName}}Draft>; normalized: NormalizedListQuery } {
+        const normalized = this.normalizeQuery(query)
+        const qb = this.draftRepository.createQueryBuilder('d')
+
+        qb.andWhere('d.objStatus = :activeStatus', { activeStatus: 'active' })
+        this.applySearch(qb, normalized.search, normalized.searchFields)
+        this.applyFilters(qb, normalized.filters)
+        this.applySort(qb, normalized.sortField, normalized.sortDirection)
+
+        return { qb, normalized }
+    }
+
+    private async nextId(): Promise<string> {
+        return OMUtilts.generateTimestampId()
+    }
+
+    private async nextRevision(contentId: string): Promise<number> {
+        const result = await this.draftRepository
+            .createQueryBuilder('d')
+            .select('MAX(d.objRev)', 'max')
+            .where('d.objContentId = :contentId', { contentId })
+            .getRawOne<{ max: string }>()
+        return (Number(result?.max) || 0) + 1
+    }
+
+    private shouldPublish(publishFlag: unknown, objState?: string): boolean {
+        if (typeof publishFlag === 'boolean') return publishFlag
+        const normalized = String(objState || '').trim().toLowerCase()
+        return normalized === 'publish' || normalized === 'published'
+    }
+
+    private normalizePayloadForSave(payload: Record<string, any>): Record<string, any> {
+        const normalized = { ...payload }
+
+{{#each fieldList}}
+{{#if this.isArray}}
+        if (Array.isArray(normalized['{{this.name}}'])) {
+            normalized['{{this.name}}'] = JSON.stringify(
+                normalized['{{this.name}}'].map((item: unknown) => String(item ?? '').trim()).filter(Boolean),
+            )
+        }
+{{/if}}
+{{#if this.isBoolean}}
+        if (typeof normalized['{{this.name}}'] === 'boolean') {
+            normalized['{{this.name}}'] = normalized['{{this.name}}'] ? 1 : 0
+        } else if (normalized['{{this.name}}'] !== undefined && normalized['{{this.name}}'] !== null) {
+            const raw = String(normalized['{{this.name}}']).trim().toLowerCase()
+            normalized['{{this.name}}'] = raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on' ? 1 : 0
+        }
+{{/if}}
+{{/each}}
+
+        return normalized
+    }
+
+    async create(createDto: {{CreateDtoName}}): Promise<{{EntityName}}Draft> {
+        const { publish, obj_state, obj_status, obj_lang, obj_rev, obj_created_by, obj_modified_by, obj_published_by, ...rest } = createDto as any
+        const newId = await this.nextId()
+        const contentId = newId
+        const nextRev = obj_rev ?? (await this.nextRevision(contentId))
+        const publishFlag = this.shouldPublish(publish, obj_state)
+        const nowUtc = OMDatetime.getUtcNow()
+
+        const normalizedRest = this.normalizePayloadForSave(rest)
+
+        const draft = this.draftRepository.create({
+            ...normalizedRest,
+            {{camelName}}Id: newId,
+            objStatus: obj_status || 'active',
+            objState: publishFlag ? 'published' : obj_state || 'draft',
+            objLang: obj_lang || 'en',
+            objRev: nextRev,
+            objContentId: contentId,
+            objCreatedDate: nowUtc,
+            objCreatedBy: obj_created_by,
+            objModifiedDate: nowUtc,
+            objModifiedBy: obj_modified_by ?? obj_created_by,
+            objPublishedDate: publishFlag ? nowUtc : null,
+            objPublishedBy: publishFlag ? obj_published_by ?? obj_created_by ?? null : null,
+        } as any) as unknown as {{EntityName}}Draft
+
+        const savedDraft: {{EntityName}}Draft = await this.draftRepository.save(draft as {{EntityName}}Draft)
+
+        if (publishFlag) {
+            const published = this.mainRepository.create(savedDraft as unknown as {{EntityName}})
+            await this.mainRepository.save(published)
+        }
+
+        return savedDraft
+    }
+
+    async findAll(query?: ListQueryInput): Promise<{{EntityName}}Draft[] | { items: {{EntityName}}Draft[]; total: number; page: number; pageSize: number }> {
+        if (!query || Object.keys(query).length === 0) {
+            return this.draftRepository.find({ where: { objStatus: 'active' } as any, order: { objModifiedDate: 'DESC' } as any })
+        }
+
+        const { qb, normalized } = this.buildListQuery(query)
+        qb.skip((normalized.page - 1) * normalized.pageSize)
+        qb.take(normalized.pageSize)
+
+        const [items, total] = await qb.getManyAndCount()
+        return { items, total, page: normalized.page, pageSize: normalized.pageSize }
+    }
+
+    async findOne(id: string): Promise<{{EntityName}}Draft | null> {
+        const row = await this.draftRepository
+            .createQueryBuilder('d')
+            .where('d.objStatus = :status', { status: 'active' })
+            .andWhere('(d.{{camelName}}Id = :id OR d.objContentId = :id)', { id })
+            .orderBy('d.objRev', 'DESC')
+            .getOne()
+
+        if (!row) return null
+        return row
+    }
+
+    async update(id: string, updateDto: {{UpdateDtoName}}): Promise<{{EntityName}}Draft | null> {
+        const existing = await this.findOne(id)
+        if (!existing) return null
+
+        const { publish, obj_state, obj_lang, obj_modified_by, obj_published_by, ...rest } = updateDto as any
+
+        await this.draftRepository.update(
+            { {{camelName}}Id: (existing as any).{{camelName}}Id, objLang: existing.objLang, objRev: existing.objRev } as any,
+            { objStatus: 'archive', objModifiedBy: obj_modified_by ?? (existing as any).objModifiedBy, objModifiedDate: OMDatetime.getUtcNow() } as any,
+        )
+
+        const contentId = String((existing as any).objContentId)
+        const nextRev = await this.nextRevision(contentId)
+        const publishFlag = this.shouldPublish(publish, obj_state)
+        const nowUtc = OMDatetime.getUtcNow()
+
+        const normalizedRest = this.normalizePayloadForSave(rest)
+
+        const merged = this.draftRepository.create({
+            ...existing,
+            ...normalizedRest,
+            objState: publishFlag ? 'published' : obj_state || (existing as any).objState || 'draft',
+            objLang: obj_lang || (existing as any).objLang || 'en',
+            objRev: nextRev,
+            objModifiedDate: nowUtc,
+            objModifiedBy: obj_modified_by ?? (existing as any).objModifiedBy,
+            objPublishedDate: publishFlag ? nowUtc : null,
+            objPublishedBy: publishFlag ? obj_published_by ?? (existing as any).objCreatedBy : null,
+        } as any) as unknown as {{EntityName}}Draft
+
+        const savedDraft: {{EntityName}}Draft = await this.draftRepository.save(merged as {{EntityName}}Draft)
+
+        if (publishFlag) {
+            await this.mainRepository.save(this.mainRepository.create(savedDraft as unknown as {{EntityName}}))
+        } else {
+            await this.mainRepository.delete({ {{camelName}}Id: (savedDraft as any).{{camelName}}Id } as any)
+        }
+
+        return savedDraft
+    }
+
+    async remove(id: string, actorId?: number): Promise<void> {
+        const existing = await this.findOne(id)
+        if (!existing) return
+
+        const nextRev = await this.nextRevision(String((existing as any).objContentId))
+
+        await this.draftRepository.save(
+            this.draftRepository.create({
+                ...existing,
+                objStatus: 'delete',
+                objState: 'draft',
+                objRev: nextRev,
+                objModifiedDate: OMDatetime.getUtcNow(),
+                objModifiedBy: actorId ?? (existing as any).objModifiedBy ?? (existing as any).objCreatedBy,
+                objPublishedDate: null,
+                objPublishedBy: null,
+            } as any),
+        )
+
+        await this.mainRepository.delete({ {{camelName}}Id: (existing as any).{{camelName}}Id } as any)
+    }
+
+    async runListAction(payload?: ListActionInput, actorId?: number): Promise<{ action: string; requested: number; success: number; failed: number; failedIds: string[] }> {
+        const action = String(payload?.action || '').trim().toLowerCase()
+        const ids = Array.isArray(payload?.ids)
+            ? payload!.ids.map((id) => String(id ?? '').trim()).filter(Boolean)
+            : []
+
+        if (!action || ids.length === 0) {
+            return { action, requested: ids.length, success: 0, failed: ids.length, failedIds: ids }
+        }
+
+        let success = 0
+        const failedIds: string[] = []
+
+        if (action === 'delete') {
+            for (const id of ids) {
+                try {
+                    await this.remove(id, actorId)
+                    success += 1
+                } catch {
+                    failedIds.push(id)
+                }
+            }
+
+            return {
+                action,
+                requested: ids.length,
+                success,
+                failed: failedIds.length,
+                failedIds,
+            }
+        }
+
+        return { action, requested: ids.length, success: 0, failed: ids.length, failedIds: ids }
+    }
+
+    async exportRows(payload?: ListQueryInput & { fields?: string[] }): Promise<{ fields: string[]; total: number; items: Record<string, any>[] }> {
+        const requestedFields = Array.isArray(payload?.fields)
+            ? payload?.fields.map((field) => String(field || '').trim()).filter(Boolean)
+            : []
+
+        const selectedPairs = requestedFields
+            .map((field) => ({ field, column: this.resolveColumn(field) }))
+            .filter((item): item is { field: string; column: keyof {{EntityName}}Draft } => Boolean(item.column))
+
+        const fallbackFields = ['{{fileName}}_id', 'obj_state', 'obj_lang', 'obj_modified_date']
+        const pairs = selectedPairs.length > 0
+            ? selectedPairs
+            : fallbackFields
+                    .map((field) => ({ field, column: this.resolveColumn(field) }))
+                    .filter((item): item is { field: string; column: keyof {{EntityName}}Draft } => Boolean(item.column))
+
+        const { qb } = this.buildListQuery(payload)
+        const rows = await qb.getMany()
+
+        const items = rows.map((row) => {
+            const output: Record<string, any> = {}
+            pairs.forEach(({ field, column }) => {
+                output[field] = (row as any)[column]
+            })
+            return output
+        })
+
+        return {
+            fields: pairs.map((item) => item.field),
+            total: items.length,
+            items,
+        }
+    }
+
+    async getLookup(field?: string, lang?: string): Promise<LookupResponse> {
+        const normalizedField = String(field || '')
+        const normalizedLang = this.resolveLang(lang)
+
+        const map: Record<string, Array<{ value: string; label: string }>> = {
+{{#each fieldList}}
+{{#if this.staticLookupItems}}
+{{#if this.staticLookupItems.length}}
+            {{this.name}}: [
+{{#each this.staticLookupItems}}
+                { value: '{{this.value}}', label: '{{this.label}}' },
+{{/each}}
+            ],
+{{/if}}
+{{/if}}
+{{/each}}
+        }
+
+        if (this.tableLookupMap[normalizedField]) {
+            const options = await this.queryTableLookup(this.tableLookupMap[normalizedField], normalizedLang)
+            return {
+                field: normalizedField,
+                lang: normalizedLang,
+                options,
+            }
+        }
+
+        return {
+            field: normalizedField,
+            lang: normalizedLang,
+            options: map[normalizedField] || [],
+        }
+    }
+
+    async getRevisions(id: string): Promise<{ activeRevision: number | null; items: Array<Record<string, any>> }> {
+        const current = await this.findOne(id)
+        const contentId = String((current as any)?.objContentId || id || '').trim()
+        if (!contentId) {
+            return { activeRevision: null, items: [] }
+        }
+
+        const rows = await this.draftRepository
+            .createQueryBuilder('d')
+            .where('d.objContentId = :contentId', { contentId })
+            .orderBy('d.objRev', 'DESC')
+            .addOrderBy('d.objModifiedDate', 'DESC')
+            .getMany()
+
+        const items = rows.map((row) => ({
+            id: (row as any).{{camelName}}Id,
+            contentId: (row as any).objContentId,
+            rev: (row as any).objRev,
+            lang: (row as any).objLang,
+            state: (row as any).objState,
+            status: (row as any).objStatus,
+            modifiedDate: (row as any).objModifiedDate,
+            modifiedBy: (row as any).objModifiedBy,
+            publishedDate: (row as any).objPublishedDate,
+            publishedBy: (row as any).objPublishedBy,
+        }))
+
+        return {
+            activeRevision: current ? Number((current as any).objRev || 0) : null,
+            items,
+        }
+    }
+
+    async getRevisionSnapshot(id: string, rev: number, lang?: string): Promise<{{EntityName}}Draft | null> {
+        const normalizedRev = Number(rev) || 0
+        if (normalizedRev <= 0) return null
+
+        const current = await this.findOne(id)
+        const contentId = String((current as any)?.objContentId || id || '').trim()
+        if (!contentId) return null
+
+        const qb = this.draftRepository
+            .createQueryBuilder('d')
+            .where('d.objContentId = :contentId', { contentId })
+            .andWhere('d.objRev = :rev', { rev: normalizedRev })
+
+        const normalizedLang = String(lang || '').trim()
+        if (normalizedLang) {
+            qb.andWhere('d.objLang = :lang', { lang: normalizedLang })
+        }
+
+        return qb
+            .orderBy('d.objModifiedDate', 'DESC')
+            .getOne()
     }
 }

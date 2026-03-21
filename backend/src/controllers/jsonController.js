@@ -1,8 +1,15 @@
 const JsonSchema = require('../models/JsonSchema');
 const MigrationGenerator = require('../utils/MigrationGenerator');
-const GitService = require('../services/GitService');
 const CodeGenerator = require('../utils/CodeGenerator');
 const ProjectScaffolder = require('../utils/ProjectScaffolder');
+const GitService = require('../services/GitService');
+const path = require('path');
+
+function sanitizeProjectFolderName(projectName, projectId) {
+    const fallback = `project-${projectId}`;
+    const raw = String(projectName || '').trim() || fallback;
+    return raw.replace(/[<>:"/\\|?*]/g, '_');
+}
 
 exports.saveJsonSchema = async (req, res) => {
     console.log('🔥 saveJsonSchema controller called!');
@@ -62,26 +69,38 @@ exports.saveJsonSchema = async (req, res) => {
                 error: 'schema.module must be an array'
             });
         }
-        await ProjectScaffolder.scaffold();
+
+        const templateRepoUrl =
+            schema.setting?.template_repo || schema.template_repo;
+
+        const projectFolderName = sanitizeProjectFolderName(schema.project, projectId);
+        const workspaceDir = path.join(
+            __dirname,
+            '../../temp/projects',
+            projectFolderName
+        );
+
+        await ProjectScaffolder.scaffold({ templateRepoUrl, workspaceDir });
 
         const migrationResult =
-            await MigrationGenerator.generateMigration(schema);
+            await MigrationGenerator.generateMigration(schema, { workspaceDir });
         console.log('✔ Migration generation result:', migrationResult);
         
         
         const codeResult =
-            await CodeGenerator.generate(schema);
+            await CodeGenerator.generate(schema, { workspaceDir });
         console.log('✔ Code generation result:', codeResult);
-        
-        // ===== PUSH TO GIT =====
-        const repoUrl =
-            schema.setting?.repo || schema.repo;
 
+        const repoUrl = schema.setting?.repo || schema.repo;
+        const branch = 'jaipongz';
         if (repoUrl) {
             console.log('🚀 Pushing generated files to git...');
-            await GitService.pushTempToRepo(repoUrl, schema.project);
+            await GitService.pushTempToRepo(repoUrl, schema.project, {
+                workspaceDir,
+                branch
+            });
         } else {
-            console.log('⚠️ No repo specified, skip git push');
+            console.log('ℹ️ No repo configured, keep outputs in temp only');
         }
 
         // Save to database
@@ -92,7 +111,11 @@ exports.saveJsonSchema = async (req, res) => {
         res.json({
             success: true,
             message: 'JSON saved successfully',
-            data: saveResult
+            data: {
+                ...saveResult,
+                workspaceDir,
+                projectFolderName
+            }
         });
 
     } catch (error) {

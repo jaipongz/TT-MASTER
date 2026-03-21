@@ -1,0 +1,45 @@
+import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+
+@Entity('{{fileName}}_draft')
+export class {{EntityName}}Draft {
+  @PrimaryColumn({ type: 'bigint', name: '{{fileName}}_id' })
+  {{camelName}}Id: string;
+
+{{#each fieldList}}
+  @Column('{{this.columnType}}', { name: '{{this.name}}'{{this.nullableText}} })
+  {{this.propertyName}}{{#unless this.required}}?{{/unless}}: {{#if this.isBoolean}}number{{else}}{{#if this.isArray}}string{{else}}{{this.dtoType}}{{/if}}{{/if}};
+
+{{/each}}
+  @Column('varchar', { name: 'obj_status', length: 10 })
+  objStatus: string;
+
+  @Column('varchar', { name: 'obj_state', length: 10 })
+  objState: string;
+
+  @PrimaryColumn({ type: 'varchar', name: 'obj_lang', length: 10 })
+  objLang: string;
+
+  @PrimaryColumn({ type: 'int', name: 'obj_rev' })
+  objRev: number;
+
+  @Column('bigint', { name: 'obj_content_id' })
+  objContentId: string;
+
+  @CreateDateColumn({ name: 'obj_created_date' })
+  objCreatedDate: Date;
+
+  @Column('int', { name: 'obj_created_by' })
+  objCreatedBy: number;
+
+  @UpdateDateColumn({ name: 'obj_modified_date' })
+  objModifiedDate: Date;
+
+  @Column('int', { name: 'obj_modified_by' })
+  objModifiedBy: number;
+
+  @Column('datetime', { name: 'obj_published_date', nullable: true, default: () => 'NULL' })
+  objPublishedDate: Date | null;
+
+  @Column('int', { name: 'obj_published_by', nullable: true })
+  objPublishedBy: number | null;
+}

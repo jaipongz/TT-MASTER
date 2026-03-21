@@ -3,14 +3,16 @@ const fs = require('fs');
 const path = require('path');
 
 class GitService {
-    static pushTempToRepo(repoUrl, projectName) {
+    static pushTempToRepo(repoUrl, projectName, options = {}) {
         if (!repoUrl) {
             throw new Error('Repo URL is missing');
         }
 
-        const BRANCH = 'jaipongz'; // ✅ ตั้งชื่อ branch ตรงนี้
-        const tempDir = path.join(__dirname, '../../temp');
-        const repoDir = path.join(tempDir, '_repo');
+        const BRANCH = 'jaipongz';
+        const workspaceDir =
+            options.workspaceDir ||
+            path.join(__dirname, '../../temp/default-project');
+        const repoDir = path.join(workspaceDir, '_repo');
 
         console.log('🚀 Pushing temp files to git...');
         console.log('📦 Repo:', repoUrl);
@@ -36,11 +38,11 @@ class GitService {
         }
 
         // 4. copy temp files (exclude _repo itself)
-        const files = fs.readdirSync(tempDir);
+        const files = fs.readdirSync(workspaceDir);
         for (const file of files) {
-            if (file === '_repo') continue;
+            if (file === '_repo' || file === '_template_repo') continue;
 
-            const src = path.join(tempDir, file);
+            const src = path.join(workspaceDir, file);
             const dest = path.join(repoDir, file);
 
             fs.cpSync(src, dest, { recursive: true });
@@ -56,7 +58,11 @@ class GitService {
         });
 
         if (!status.trim()) {
-            console.log('ℹ️ No changes to commit, skipping git commit');
+            console.log('ℹ️ No changes to commit, ensuring remote branch exists');
+            execSync(`git push -u origin ${BRANCH}`, {
+                cwd: repoDir,
+                stdio: 'inherit'
+            });
         } else {
             execSync(
                 `git commit -m "auto: push jaipongz industries"`,
