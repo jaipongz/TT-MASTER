@@ -1,22 +1,3 @@
 import { ListConfig } from '../../types/listConfig'
 
-const module_name = '{{fileName}}'
-
-export const {{uiListConfigName}}: ListConfig = {
-  title: '{{moduleTitle}}',
-  endpoint: `/${module_name}`,
-  serverSide: true,
-  keywords: '{{#each fieldList}}{{#if @first}}{{this.name}}{{else}},{{this.name}}{{/if}}{{/each}}',
-  export: {{#if features.hasExport}}true{{else}}false{{/if}},
-  select: true,
-  scroll: true,
-  limit: 15,
-  createHref: `/${module_name}/new?mode=add`,
-  rowKey: '{{fileName}}_id',
-  columns: [
-{{#each fieldList}}
-    { field: '{{this.name}}', name: '{{this.label}}', type: '{{this.listType}}', width: 140, sort: true },
-{{/each}}
-    { field: 'obj_modified_date', name: 'Updated', type: 'datetime', width: 140, sort: true },
-  ],
-}
+export const {{uiListConfigName}}: ListConfig = {{{listConfigJson}}}

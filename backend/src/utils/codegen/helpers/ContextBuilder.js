@@ -2,6 +2,7 @@ const NamingHelper = require('./NamingHelper');
 const FieldHelper = require('./FieldHelper');
 const FeatureHelper = require('./FeatureHelper');
 const FormConfigBuilder = require('./FormConfigBuilder');
+const ListConfigBuilder = require('./ListConfigBuilder');
 
 class ContextBuilder {
     // Build a normalized module context for all generators/templates.
@@ -18,11 +19,13 @@ class ContextBuilder {
         const uiCustomFormConfigName = `${camelName}CustomFormConfig`;
         const uiPageClassName = `${EntityName}`;
         const formConfigJson = FormConfigBuilder.build(moduleConfig);
+        const listConfigJson = ListConfigBuilder.build(moduleConfig, fieldList);
 
         const childCollections = Object.entries(moduleConfig.childs || {})
             .filter(([, child]) => child?.type === 'child')
             .map(([childName, child]) => ({
                 childName: NamingHelper.snake(childName),
+                childCamelName: NamingHelper.camel(childName),
                 ChildEntityName: NamingHelper.pascal(childName),
                 childTitle: child.title || NamingHelper.title(childName),
                 fields: FieldHelper.normalizeFields(child.fields || {})
@@ -32,6 +35,7 @@ class ContextBuilder {
             .filter(([, child]) => child?.type === 'gallery')
             .map(([childName, child]) => ({
                 childName: NamingHelper.snake(childName),
+                childCamelName: NamingHelper.camel(childName),
                 ChildEntityName: NamingHelper.pascal(childName),
                 childTitle: child.title || NamingHelper.title(childName)
             }));
@@ -104,7 +108,8 @@ class ContextBuilder {
             uiCustomFormConfigName,
             uiPageClassName,
             moduleTitle: moduleConfig.title || NamingHelper.title(moduleConfig.tblname),
-            formConfigJson
+            formConfigJson,
+            listConfigJson
         };
     }
 }

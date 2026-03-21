@@ -108,6 +108,7 @@ class OutputPlanner {
                         EntityName: child.ChildEntityName,
                         fileName: child.childName,
                         camelName: this.toCamel(child.childName),
+                        isChildEntity: true,
                         fieldList: child.fields
                     }
                 },
@@ -121,6 +122,7 @@ class OutputPlanner {
                         EntityName: child.ChildEntityName,
                         fileName: child.childName,
                         camelName: this.toCamel(child.childName),
+                        isChildEntity: true,
                         fieldList: child.fields
                     }
                 }

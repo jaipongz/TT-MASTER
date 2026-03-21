@@ -7,6 +7,14 @@ import { {{EntityName}} } from './{{fileName}}.entity'
 import { {{EntityName}}Draft } from './{{fileName}}-draft.entity'
 import { {{CreateDtoName}} } from './dto/create-{{fileName}}.dto'
 import { {{UpdateDtoName}} } from './dto/update-{{fileName}}.dto'
+{{#each childCollections}}
+import { {{this.ChildEntityName}} } from './{{this.childName}}.entity'
+import { {{this.ChildEntityName}}Draft } from './{{this.childName}}-draft.entity'
+{{/each}}
+{{#each galleryCollections}}
+import { {{this.ChildEntityName}} } from './{{this.childName}}.entity'
+import { {{this.ChildEntityName}}Draft } from './{{this.childName}}-draft.entity'
+{{/each}}
 import { OMDatetime } from '../../common/utils/OMDatetime.util'
 import { OMUtilts } from '../../common/utils/OMUtilts.util'
 
@@ -103,6 +111,18 @@ export class {{ServiceName}} {
         private mainRepository: Repository<{{EntityName}}>,
         @InjectRepository({{EntityName}}Draft)
         private draftRepository: Repository<{{EntityName}}Draft>,
+    {{#each childCollections}}
+        @InjectRepository({{this.ChildEntityName}})
+        private {{this.childName}}Repository: Repository<{{this.ChildEntityName}}>,
+        @InjectRepository({{this.ChildEntityName}}Draft)
+        private {{this.childName}}DraftRepository: Repository<{{this.ChildEntityName}}Draft>,
+    {{/each}}
+    {{#each galleryCollections}}
+        @InjectRepository({{this.ChildEntityName}})
+        private {{this.childName}}Repository: Repository<{{this.ChildEntityName}}>,
+        @InjectRepository({{this.ChildEntityName}}Draft)
+        private {{this.childName}}DraftRepository: Repository<{{this.ChildEntityName}}Draft>,
+    {{/each}}
     ) {}
 
     private resolveLang(lang?: string): string {
@@ -171,6 +191,115 @@ export class {{ServiceName}} {
         }
 
         return raw.split(',').map((item) => item.trim()).filter(Boolean)
+    }
+
+    private toObjectArray(value: unknown): Array<Record<string, any>> {
+        if (Array.isArray(value)) {
+            return value.filter((item) => item && typeof item === 'object') as Array<Record<string, any>>
+        }
+
+        const raw = String(value ?? '').trim()
+        if (!raw) return []
+
+        try {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed)) {
+                return parsed.filter((item) => item && typeof item === 'object') as Array<Record<string, any>>
+            }
+        } catch {
+            // ignore
+        }
+
+        return []
+    }
+
+    private normalizeKey(input: string): string {
+        return String(input || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+    }
+
+    private extractCollections(payload: Record<string, any>): {
+        sanitizedRest: Record<string, any>
+        childCollectionRows: Record<string, Array<Record<string, any>>>
+        galleryCollectionRows: Record<string, Array<Record<string, any>>>
+        childCollectionProvided: Record<string, boolean>
+        galleryCollectionProvided: Record<string, boolean>
+    } {
+        const sanitizedRest = { ...payload }
+        const consumedKeys = new Set<string>()
+        const childCollectionRows: Record<string, Array<Record<string, any>>> = {
+    {{#each childCollections}}
+            '{{this.childName}}': [],
+    {{/each}}
+        }
+        const galleryCollectionRows: Record<string, Array<Record<string, any>>> = {
+    {{#each galleryCollections}}
+            '{{this.childName}}': [],
+    {{/each}}
+        }
+        const childCollectionProvided: Record<string, boolean> = {
+    {{#each childCollections}}
+            '{{this.childName}}': false,
+    {{/each}}
+        }
+        const galleryCollectionProvided: Record<string, boolean> = {
+    {{#each galleryCollections}}
+            '{{this.childName}}': false,
+    {{/each}}
+        }
+
+        Object.entries(sanitizedRest).forEach(([rawKey, rawValue]) => {
+            const normalizedRawKey = this.normalizeKey(rawKey)
+
+            if (normalizedRawKey.startsWith('__child_')) {
+                const suffix = this.normalizeKey(rawKey.replace(/^__child_/i, ''))
+    {{#each childCollections}}
+            if (suffix === this.normalizeKey('{{this.childName}}') || suffix.startsWith(`${this.normalizeKey('{{this.childName}}')}_list`)) {
+                childCollectionRows['{{this.childName}}'] = this.toObjectArray(rawValue)
+                childCollectionProvided['{{this.childName}}'] = true
+                    consumedKeys.add(rawKey)
+            }
+    {{/each}}
+            }
+
+{{#each childCollections}}
+            if (
+                normalizedRawKey === this.normalizeKey('{{this.childName}}') ||
+                normalizedRawKey === this.normalizeKey('{{this.childName}}_list'){{#if @first}} ||
+                normalizedRawKey === this.normalizeKey('child_list'){{/if}}
+            ) {
+                childCollectionRows['{{this.childName}}'] = this.toObjectArray(rawValue)
+                childCollectionProvided['{{this.childName}}'] = true
+                consumedKeys.add(rawKey)
+            }
+{{/each}}
+
+            if (normalizedRawKey.startsWith('__gallery_')) {
+            const suffix = this.normalizeKey(rawKey.replace(/^__gallery_/i, ''))
+    {{#each galleryCollections}}
+            if (suffix === this.normalizeKey('{{this.childName}}')) {
+                galleryCollectionRows['{{this.childName}}'] = this.toObjectArray(rawValue)
+                galleryCollectionProvided['{{this.childName}}'] = true
+                    consumedKeys.add(rawKey)
+            }
+    {{/each}}
+            }
+
+{{#each galleryCollections}}
+            if (normalizedRawKey === this.normalizeKey('{{this.childName}}'){{#if @first}} || normalizedRawKey === this.normalizeKey('gallery'){{/if}}) {
+                galleryCollectionRows['{{this.childName}}'] = this.toObjectArray(rawValue)
+                galleryCollectionProvided['{{this.childName}}'] = true
+                consumedKeys.add(rawKey)
+            }
+{{/each}}
+        })
+
+        Object.keys(sanitizedRest).forEach((key) => {
+            if (key.startsWith('__child_') || key.startsWith('__gallery_') || consumedKeys.has(key)) {
+                delete sanitizedRest[key]
+            }
+        })
+
+        return { sanitizedRest, childCollectionRows, galleryCollectionRows, childCollectionProvided, galleryCollectionProvided }
     }
 
     private parseFilters(query: ListQueryInput): Record<string, string[]> {
@@ -311,20 +440,205 @@ export class {{ServiceName}} {
             normalized['{{this.name}}'] = raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on' ? 1 : 0
         }
 {{/if}}
+{{#if this.isImage}}
+        if (normalized['{{this.name}}_gen'] === undefined || normalized['{{this.name}}_gen'] === null) {
+            normalized['{{this.name}}_gen'] = normalized['{{this.name}}'] ? 'N' : ''
+        }
+{{/if}}
+{{#if this.isVideo}}
+        if (normalized['{{this.name}}_gen'] === undefined || normalized['{{this.name}}_gen'] === null) {
+            normalized['{{this.name}}_gen'] = normalized['{{this.name}}'] ? 'N' : ''
+        }
+{{/if}}
+{{#if this.isFile}}
+        if (normalized['{{this.name}}_gen'] === undefined || normalized['{{this.name}}_gen'] === null) {
+            normalized['{{this.name}}_gen'] = normalized['{{this.name}}'] ? 'N' : ''
+        }
+{{/if}}
+{{#if this.isFulltext}}
+        if (normalized['{{this.name}}_plain'] === undefined || normalized['{{this.name}}_plain'] === null) {
+            const plainSource = String(normalized['{{this.name}}'] ?? '')
+            normalized['{{this.name}}_plain'] = plainSource.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+        }
+{{/if}}
 {{/each}}
 
         return normalized
     }
 
+    private async loadDraftCollections(parentId: string, objRev: number): Promise<{
+        childCollectionRows: Record<string, Array<Record<string, any>>>
+        galleryCollectionRows: Record<string, Array<Record<string, any>>>
+    }> {
+        const childCollectionRows: Record<string, Array<Record<string, any>>> = {}
+        const galleryCollectionRows: Record<string, Array<Record<string, any>>> = {}
+
+{{#each childCollections}}
+        {
+            const rows = await this.{{this.childName}}DraftRepository.find({ where: { objParentId: parentId, objRev } as any })
+            childCollectionRows['{{this.childName}}'] = rows.map((row) => {
+                const raw = row as unknown as Record<string, any>
+                const {
+                    {{this.childCamelName}}Id,
+                    objParentId,
+                    objStatus,
+                    objState,
+                    objLang,
+                    objRev,
+                    objContentId,
+                    objCreatedDate,
+                    objCreatedBy,
+                    objModifiedDate,
+                    objModifiedBy,
+                    objPublishedDate,
+                    objPublishedBy,
+                    ...rest
+                } = raw
+                return rest
+            })
+        }
+{{/each}}
+{{#each galleryCollections}}
+        {
+            const rows = await this.{{this.childName}}DraftRepository.find({ where: { objParentId: parentId, objRev } as any, order: { objPriority: 'ASC' } as any })
+            galleryCollectionRows['{{this.childName}}'] = rows.map((row) => ({
+                file: (row as any).objFile,
+                file_gen: (row as any).objFileGen,
+                priority: (row as any).objPriority,
+            }))
+        }
+{{/each}}
+
+        return { childCollectionRows, galleryCollectionRows }
+    }
+
+    private attachCollectionsToDraft(
+        draft: {{EntityName}}Draft,
+        childCollectionRows: Record<string, Array<Record<string, any>>>,
+        galleryCollectionRows: Record<string, Array<Record<string, any>>>,
+    ): {{EntityName}}Draft & Record<string, any> {
+        const hydrated: Record<string, any> = { ...draft }
+
+{{#each childCollections}}
+        hydrated['{{this.childName}}'] = childCollectionRows['{{this.childName}}'] || []
+{{/each}}
+{{#each galleryCollections}}
+        hydrated['{{this.childName}}'] = (galleryCollectionRows['{{this.childName}}'] || []).map((row) => ({
+            file: String((row as any).file || ''),
+            file_gen: String((row as any).file_gen || ''),
+            type: String((row as any).type || 'image'),
+            priority: Number((row as any).priority ?? 0) || 0,
+        }))
+{{/each}}
+
+        return hydrated as {{EntityName}}Draft & Record<string, any>
+    }
+
+    private async findActiveDraftById(id: string): Promise<{{EntityName}}Draft | null> {
+        return this.draftRepository
+            .createQueryBuilder('d')
+            .where('d.objStatus = :status', { status: 'active' })
+            .andWhere('(d.{{camelName}}Id = :id OR d.objContentId = :id)', { id })
+            .orderBy('d.objRev', 'DESC')
+            .getOne()
+    }
+
+    private async replaceDraftCollections(parentId: string, draft: {{EntityName}}Draft, childCollectionRows: Record<string, Array<Record<string, any>>>, galleryCollectionRows: Record<string, Array<Record<string, any>>>): Promise<void> {
+{{#each childCollections}}
+        await this.{{this.childName}}DraftRepository.delete({ objParentId: parentId, objRev: draft.objRev } as any)
+
+        {
+            const rows = childCollectionRows['{{this.childName}}'] || []
+            if (rows.length > 0) {
+                const entities = rows.map((row) => this.{{this.childName}}DraftRepository.create({
+                    ...row,
+                    {{this.childCamelName}}Id: OMUtilts.generateTimestampId(),
+                    objParentId: parentId,
+                    objStatus: draft.objStatus,
+                    objState: draft.objState,
+                    objLang: draft.objLang,
+                    objRev: draft.objRev,
+                    objContentId: draft.objContentId,
+                    objCreatedBy: draft.objCreatedBy,
+                    objModifiedBy: draft.objModifiedBy,
+                    objPublishedDate: draft.objPublishedDate,
+                    objPublishedBy: draft.objPublishedBy,
+                } as any))
+                await this.{{this.childName}}DraftRepository.save(entities as any)
+            }
+        }
+{{/each}}
+{{#each galleryCollections}}
+        await this.{{this.childName}}DraftRepository.delete({ objParentId: parentId, objRev: draft.objRev } as any)
+
+        {
+            const rows = galleryCollectionRows['{{this.childName}}'] || []
+            if (rows.length > 0) {
+                const entities = rows.map((row, index) => this.{{this.childName}}DraftRepository.create({
+                    {{this.childCamelName}}Id: OMUtilts.generateTimestampId(),
+                    objParentId: parentId,
+                    objFile: String((row as any).file || (row as any).obj_file || '').trim(),
+                    objFileGen: String((row as any).file_gen || (row as any).obj_file_gen || '').trim(),
+                    objPriority: Number((row as any).priority ?? (row as any).obj_priority ?? index) || index,
+                    objLang: draft.objLang,
+                    objRev: draft.objRev,
+                } as any))
+                await this.{{this.childName}}DraftRepository.save(entities as any)
+            }
+        }
+{{/each}}
+    }
+
+    private async replacePublishedCollections(parentId: string, draft: {{EntityName}}Draft, childCollectionRows: Record<string, Array<Record<string, any>>>, galleryCollectionRows: Record<string, Array<Record<string, any>>>): Promise<void> {
+{{#each childCollections}}
+        await this.{{this.childName}}Repository.delete({ objParentId: parentId } as any)
+
+        {
+            const rows = childCollectionRows['{{this.childName}}'] || []
+            if (rows.length > 0) {
+                const entities = rows.map((row) => this.{{this.childName}}Repository.create({
+                    ...row,
+                    {{this.childCamelName}}Id: OMUtilts.generateTimestampId(),
+                    objParentId: parentId,
+                    objLang: draft.objLang,
+                    objContentId: draft.objContentId,
+                    objCreatedBy: draft.objCreatedBy,
+                    objPublishedDate: draft.objPublishedDate,
+                    objPublishedBy: draft.objPublishedBy,
+                } as any))
+                await this.{{this.childName}}Repository.save(entities as any)
+            }
+        }
+{{/each}}
+{{#each galleryCollections}}
+        await this.{{this.childName}}Repository.delete({ objParentId: parentId } as any)
+
+        {
+            const rows = galleryCollectionRows['{{this.childName}}'] || []
+            if (rows.length > 0) {
+                const entities = rows.map((row, index) => this.{{this.childName}}Repository.create({
+                    {{this.childCamelName}}Id: OMUtilts.generateTimestampId(),
+                    objParentId: parentId,
+                    objFile: String((row as any).file || (row as any).obj_file || '').trim(),
+                    objFileGen: String((row as any).file_gen || (row as any).obj_file_gen || '').trim(),
+                    objPriority: Number((row as any).priority ?? (row as any).obj_priority ?? index) || index,
+                } as any))
+                await this.{{this.childName}}Repository.save(entities as any)
+            }
+        }
+{{/each}}
+    }
+
     async create(createDto: {{CreateDtoName}}): Promise<{{EntityName}}Draft> {
         const { publish, obj_state, obj_status, obj_lang, obj_rev, obj_created_by, obj_modified_by, obj_published_by, ...rest } = createDto as any
+        const { sanitizedRest, childCollectionRows, galleryCollectionRows } = this.extractCollections(rest as Record<string, any>)
         const newId = await this.nextId()
         const contentId = newId
         const nextRev = obj_rev ?? (await this.nextRevision(contentId))
         const publishFlag = this.shouldPublish(publish, obj_state)
         const nowUtc = OMDatetime.getUtcNow()
 
-        const normalizedRest = this.normalizePayloadForSave(rest)
+        const normalizedRest = this.normalizePayloadForSave(sanitizedRest)
 
         const draft = this.draftRepository.create({
             ...normalizedRest,
@@ -343,10 +657,12 @@ export class {{ServiceName}} {
         } as any) as unknown as {{EntityName}}Draft
 
         const savedDraft: {{EntityName}}Draft = await this.draftRepository.save(draft as {{EntityName}}Draft)
+        await this.replaceDraftCollections((savedDraft as any).{{camelName}}Id, savedDraft, childCollectionRows, galleryCollectionRows)
 
         if (publishFlag) {
             const published = this.mainRepository.create(savedDraft as unknown as {{EntityName}})
             await this.mainRepository.save(published)
+            await this.replacePublishedCollections((savedDraft as any).{{camelName}}Id, savedDraft, childCollectionRows, galleryCollectionRows)
         }
 
         return savedDraft
@@ -366,22 +682,22 @@ export class {{ServiceName}} {
     }
 
     async findOne(id: string): Promise<{{EntityName}}Draft | null> {
-        const row = await this.draftRepository
-            .createQueryBuilder('d')
-            .where('d.objStatus = :status', { status: 'active' })
-            .andWhere('(d.{{camelName}}Id = :id OR d.objContentId = :id)', { id })
-            .orderBy('d.objRev', 'DESC')
-            .getOne()
+        const row = await this.findActiveDraftById(id)
 
         if (!row) return null
-        return row
+        const { childCollectionRows, galleryCollectionRows } = await this.loadDraftCollections(
+            String((row as any).{{camelName}}Id),
+            Number((row as any).objRev),
+        )
+        return this.attachCollectionsToDraft(row, childCollectionRows, galleryCollectionRows)
     }
 
     async update(id: string, updateDto: {{UpdateDtoName}}): Promise<{{EntityName}}Draft | null> {
-        const existing = await this.findOne(id)
+        const existing = await this.findActiveDraftById(id)
         if (!existing) return null
 
         const { publish, obj_state, obj_lang, obj_modified_by, obj_published_by, ...rest } = updateDto as any
+        const { sanitizedRest, childCollectionRows, galleryCollectionRows, childCollectionProvided, galleryCollectionProvided } = this.extractCollections(rest as Record<string, any>)
 
         await this.draftRepository.update(
             { {{camelName}}Id: (existing as any).{{camelName}}Id, objLang: existing.objLang, objRev: existing.objRev } as any,
@@ -393,7 +709,7 @@ export class {{ServiceName}} {
         const publishFlag = this.shouldPublish(publish, obj_state)
         const nowUtc = OMDatetime.getUtcNow()
 
-        const normalizedRest = this.normalizePayloadForSave(rest)
+        const normalizedRest = this.normalizePayloadForSave(sanitizedRest)
 
         const merged = this.draftRepository.create({
             ...existing,
@@ -409,9 +725,33 @@ export class {{ServiceName}} {
 
         const savedDraft: {{EntityName}}Draft = await this.draftRepository.save(merged as {{EntityName}}Draft)
 
+        const hasChildPayload = Object.values(childCollectionProvided).some(Boolean)
+        const hasGalleryPayload = Object.values(galleryCollectionProvided).some(Boolean)
+
+        const loadedPrevious = (!hasChildPayload && !hasGalleryPayload)
+            ? await this.loadDraftCollections(String((existing as any).{{camelName}}Id), Number((existing as any).objRev))
+            : { childCollectionRows: {}, galleryCollectionRows: {} }
+
+        const resolvedChildCollectionRows = hasChildPayload
+            ? childCollectionRows
+            : (loadedPrevious.childCollectionRows || {})
+
+        const resolvedGalleryCollectionRows = hasGalleryPayload
+            ? galleryCollectionRows
+            : (loadedPrevious.galleryCollectionRows || {})
+
+        await this.replaceDraftCollections(String((savedDraft as any).{{camelName}}Id), savedDraft, resolvedChildCollectionRows, resolvedGalleryCollectionRows)
+
         if (publishFlag) {
             await this.mainRepository.save(this.mainRepository.create(savedDraft as unknown as {{EntityName}}))
+            await this.replacePublishedCollections(String((savedDraft as any).{{camelName}}Id), savedDraft, resolvedChildCollectionRows, resolvedGalleryCollectionRows)
         } else {
+{{#each childCollections}}
+            await this.{{this.childName}}Repository.delete({ objParentId: String((savedDraft as any).{{../camelName}}Id) } as any)
+{{/each}}
+{{#each galleryCollections}}
+            await this.{{this.childName}}Repository.delete({ objParentId: String((savedDraft as any).{{../camelName}}Id) } as any)
+{{/each}}
             await this.mainRepository.delete({ {{camelName}}Id: (savedDraft as any).{{camelName}}Id } as any)
         }
 
@@ -419,7 +759,7 @@ export class {{ServiceName}} {
     }
 
     async remove(id: string, actorId?: number): Promise<void> {
-        const existing = await this.findOne(id)
+        const existing = await this.findActiveDraftById(id)
         if (!existing) return
 
         const nextRev = await this.nextRevision(String((existing as any).objContentId))
@@ -437,6 +777,12 @@ export class {{ServiceName}} {
             } as any),
         )
 
+        {{#each childCollections}}
+            await this.{{this.childName}}Repository.delete({ objParentId: String((existing as any).{{../camelName}}Id) } as any)
+        {{/each}}
+        {{#each galleryCollections}}
+            await this.{{this.childName}}Repository.delete({ objParentId: String((existing as any).{{../camelName}}Id) } as any)
+        {{/each}}
         await this.mainRepository.delete({ {{camelName}}Id: (existing as any).{{camelName}}Id } as any)
     }
 
@@ -544,7 +890,7 @@ export class {{ServiceName}} {
     }
 
     async getRevisions(id: string): Promise<{ activeRevision: number | null; items: Array<Record<string, any>> }> {
-        const current = await this.findOne(id)
+        const current = await this.findActiveDraftById(id)
         const contentId = String((current as any)?.objContentId || id || '').trim()
         if (!contentId) {
             return { activeRevision: null, items: [] }
@@ -580,7 +926,7 @@ export class {{ServiceName}} {
         const normalizedRev = Number(rev) || 0
         if (normalizedRev <= 0) return null
 
-        const current = await this.findOne(id)
+        const current = await this.findActiveDraftById(id)
         const contentId = String((current as any)?.objContentId || id || '').trim()
         if (!contentId) return null
 
@@ -594,8 +940,17 @@ export class {{ServiceName}} {
             qb.andWhere('d.objLang = :lang', { lang: normalizedLang })
         }
 
-        return qb
+        const row = await qb
             .orderBy('d.objModifiedDate', 'DESC')
             .getOne()
+
+        if (!row) return null
+
+        const { childCollectionRows, galleryCollectionRows } = await this.loadDraftCollections(
+            String((row as any).{{camelName}}Id),
+            Number((row as any).objRev),
+        )
+
+        return this.attachCollectionsToDraft(row, childCollectionRows, galleryCollectionRows)
     }
 }

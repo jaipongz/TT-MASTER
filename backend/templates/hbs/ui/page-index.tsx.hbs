@@ -9,7 +9,11 @@ import { api } from '../../utils/api'
 import { ContextMenuItem } from '../../components/core/ContextMenu'
 
 const module_name = '{{fileName}}'
-const getRecordId = (row: any) => row?.{{fileName}}_id || row?.obj_content_id
+const getRecordId = (row: any) =>
+  row?.{{camelName}}Id ||
+  row?.{{fileName}}_id ||
+  row?.objContentId ||
+  row?.obj_content_id
 
 export default function {{uiPageClassName}}ListPage() {
   const router = useRouter()

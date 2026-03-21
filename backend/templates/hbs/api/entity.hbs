@@ -8,8 +8,28 @@ export class {{EntityName}} {
 {{#each fieldList}}
   @Column('{{this.columnType}}', { name: '{{this.name}}'{{this.nullableText}} })
   {{this.propertyName}}{{#unless this.required}}?{{/unless}}: {{#if this.isBoolean}}number{{else}}{{#if this.isArray}}string{{else}}{{this.dtoType}}{{/if}}{{/if}};
+{{#if this.isImage}}
+  @Column('varchar', { name: '{{this.name}}_gen', length: 10{{this.nullableText}} })
+  {{this.propertyName}}Gen{{#unless this.required}}?{{/unless}}: string;
+  @Column('varchar', { name: '{{this.name}}_alt', nullable: true })
+  {{this.propertyName}}Alt?: string;
+{{/if}}{{#if this.isVideo}}
+  @Column('varchar', { name: '{{this.name}}_gen', length: 10{{this.nullableText}} })
+  {{this.propertyName}}Gen{{#unless this.required}}?{{/unless}}: string;
+{{/if}}{{#if this.isFile}}
+  @Column('varchar', { name: '{{this.name}}_gen', length: 10{{this.nullableText}} })
+  {{this.propertyName}}Gen{{#unless this.required}}?{{/unless}}: string;
+{{/if}}{{#if this.isFulltext}}
+  @Column('text', { name: '{{this.name}}_plain'{{this.nullableText}} })
+  {{this.propertyName}}Plain{{#unless this.required}}?{{/unless}}: string;
+{{/if}}
 
 {{/each}}
+{{#if isChildEntity}}
+  @Column('bigint', { name: 'obj_parent_id' })
+  objParentId: string;
+
+{{/if}}
   @Column('varchar', { name: 'obj_lang', length: 10 })
   objLang: string;
 

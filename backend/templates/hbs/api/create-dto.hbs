@@ -15,6 +15,39 @@ export class {{CreateDtoName}} {
 {{/unless}}
   {{this.name}}{{#unless this.required}}?{{/unless}}: {{this.dtoType}};
 
+{{#if this.isImage}}
+  @ApiProperty({ required: false, example: '{{this.name}}_gen' })
+  @IsString()
+  @IsOptional()
+  {{this.name}}_gen?: string;
+
+  @ApiProperty({ required: false, example: '{{this.name}}_alt' })
+  @IsString()
+  @IsOptional()
+  {{this.name}}_alt?: string;
+{{/if}}
+
+{{#if this.isVideo}}
+  @ApiProperty({ required: false, example: '{{this.name}}_gen' })
+  @IsString()
+  @IsOptional()
+  {{this.name}}_gen?: string;
+{{/if}}
+
+{{#if this.isFile}}
+  @ApiProperty({ required: false, example: '{{this.name}}_gen' })
+  @IsString()
+  @IsOptional()
+  {{this.name}}_gen?: string;
+{{/if}}
+
+{{#if this.isFulltext}}
+  @ApiProperty({ required: false, example: '{{this.name}}_plain' })
+  @IsString()
+  @IsOptional()
+  {{this.name}}_plain?: string;
+{{/if}}
+
 {{/each}}
   @ApiProperty({ example: 'active', required: false, default: 'active' })
   @IsString()
