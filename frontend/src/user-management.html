@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management - JSON Code Generator</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="light-theme">
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo">
+                <img src="/favicon.png" alt="App icon" class="brand-logo-img">
+                <h2>User Management</h2>
+            </div>
+            <div class="sidebar-section">
+                <button id="back-to-home-btn" class="btn-new">
+                    <i class="fas fa-arrow-left"></i> กลับหน้าโปรเจ็กต์
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="main-header um-main-header">
+                <div>
+                    <h1>User Management</h1>
+                    <p class="um-header-subtitle">จัดการผู้ใช้ สิทธิ์ และบทบาทในระบบ</p>
+                </div>
+                <div id="um-feedback" class="um-feedback" aria-live="polite"></div>
+            </header>
+
+            <div class="content-wrapper um-layout">
+                <section class="card um-list-card">
+                    <div class="card-header">
+                        <h3>รายการผู้ใช้</h3>
+                        <div class="um-list-actions">
+                            <span id="user-count" class="um-pill">0 users</span>
+                            <button id="show-add-user-btn" type="button" class="btn btn-sm btn-primary">
+                                <i class="fas fa-user-plus"></i> Add User
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="user-list" class="um-list"></div>
+                    </div>
+                </section>
+
+                <section class="card um-detail-card">
+                    <div class="card-header">
+                        <h3>รายละเอียดผู้ใช้</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="add-user-form" class="um-form um-create-form" style="display: none;">
+                            <h4 class="um-form-title">เพิ่มผู้ใช้ใหม่</h4>
+                            <div class="um-form-grid">
+                                <div class="form-group">
+                                    <label for="new-display-name">ชื่อที่แสดง</label>
+                                    <input id="new-display-name" type="text" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="new-email">Email</label>
+                                    <input id="new-email" type="text" required>
+                                </div>
+                            </div>
+                            <div class="um-form-grid">
+                                <div class="form-group">
+                                    <label for="new-password">Password</label>
+                                    <input id="new-password" type="password" minlength="6" required>
+                                </div>
+                                <div class="form-group um-switch-group">
+                                    <label for="new-is-admin">สิทธิ์ผู้ดูแลระบบ</label>
+                                    <label class="um-switch">
+                                        <input id="new-is-admin" type="checkbox">
+                                        <span class="um-switch-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button id="cancel-add-user-btn" type="button" class="btn btn-secondary">ยกเลิก</button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-user-plus"></i> สร้างผู้ใช้
+                                </button>
+                            </div>
+                        </form>
+
+                        <form id="user-detail-form" class="um-form">
+                            <input type="hidden" id="detail-user-ref">
+                            <div class="um-form-grid">
+                                <div class="form-group">
+                                    <label for="detail-display-name">ชื่อที่แสดง</label>
+                                    <input id="detail-display-name" type="text" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="detail-email">Email</label>
+                                    <input id="detail-email" type="text" required>
+                                </div>
+                            </div>
+                            <div class="um-form-grid">
+                                <div class="form-group">
+                                    <label for="detail-password">Password ใหม่ (เว้นว่างได้)</label>
+                                    <input id="detail-password" type="password" placeholder="อย่างน้อย 6 ตัวอักษร">
+                                </div>
+                                <div class="form-group um-switch-group">
+                                    <label for="detail-is-admin">สิทธิ์ผู้ดูแลระบบ</label>
+                                    <label class="um-switch">
+                                        <input id="detail-is-admin" type="checkbox">
+                                        <span class="um-switch-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save"></i> บันทึกผู้ใช้
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+
+                <section class="card um-permission-card">
+                    <div class="card-header">
+                        <h3>สิทธิ์โปรเจ็กต์ของผู้ใช้</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="permission-form" class="um-permission-form">
+                            <div class="form-group">
+                                <label for="perm-project-select">โปรเจ็กต์</label>
+                                <select id="perm-project-select" required></select>
+                            </div>
+                            <div class="um-permission-flags">
+                                <label class="um-check-pill">
+                                    <input id="perm-can-view" type="checkbox" checked>
+                                    <span>View</span>
+                                </label>
+                                <label class="um-check-pill">
+                                    <input id="perm-can-edit" type="checkbox">
+                                    <span>Edit</span>
+                                </label>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-shield-halved"></i> บันทึกสิทธิ์
+                            </button>
+                        </form>
+                        <div id="permission-list" class="permission-list"></div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/user-management.js"></script>
+</body>
+</html>

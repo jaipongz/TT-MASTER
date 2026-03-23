@@ -3,6 +3,8 @@ const MigrationGenerator = require('../utils/MigrationGenerator');
 const CodeGenerator = require('../utils/CodeGenerator');
 const ProjectScaffolder = require('../utils/ProjectScaffolder');
 const GitService = require('../services/GitService');
+const ProjectLock = require('../models/ProjectLock');
+const Project = require('../models/Project');
 const path = require('path');
 
 function sanitizeProjectFolderName(projectName, projectId) {
@@ -17,6 +19,15 @@ exports.saveJsonSchema = async (req, res) => {
 
     try {
         const { projectId, jsonData } = req.body;
+
+        const lockCheck = await ProjectLock.requireLockOwner(projectId, req.user.id);
+        if (!lockCheck.ok) {
+            return res.status(409).json({
+                success: false,
+                error: 'Project is currently locked by another user',
+                conflict: lockCheck.reason
+            });
+        }
 
         // ตรวจสอบข้อมูลที่เข้ามา
         if (!projectId) {
@@ -107,6 +118,8 @@ exports.saveJsonSchema = async (req, res) => {
         console.log('🚀 Calling JsonSchema.save()...');
         const saveResult = await JsonSchema.save(projectId, jsonData);
         console.log('🚀 Save result:', saveResult);
+
+        await Project.stampLastUpdatedBy(projectId, req.user.id);
 
         res.json({
             success: true,

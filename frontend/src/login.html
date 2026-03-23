@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prometheus - Code Generator</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="light-theme">
+    <div class="login-page">
+        <div class="login-card">
+            <div class="login-brand">
+                <img src="/favicon.png" alt="App icon" class="brand-logo-img">
+                <h1>Prometheus</h1>
+            </div>
+            <p class="login-subtitle">เข้าสู่ระบบเพื่อจัดการโปรเจ็กต์ของคุณ</p>
+
+            <form id="login-form" class="auth-form login-form-standalone">
+                <div class="form-group">
+                    <label for="login-email">Email</label>
+                    <input type="text" id="login-email" required placeholder="เช่น admin">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" required placeholder="รหัสผ่าน">
+                </div>
+                <button type="submit" class="btn btn-primary auth-submit-btn">เข้าสู่ระบบ</button>
+            </form>
+
+            <p class="login-note">ระบบนี้ไม่มีหน้า Register และ Forgot Password</p>
+        </div>
+    </div>
+
+    <script src="js/login.js"></script>
+</body>
+</html>

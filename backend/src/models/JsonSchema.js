@@ -5,7 +5,19 @@ class JsonSchema {
         try {
             console.log('🔍 getByProjectId for:', projectId);
             const [rows] = await db.query(
-                'SELECT * FROM json_schemas WHERE project_id = ?',
+                `SELECT
+                    js.id,
+                    js.project_id,
+                    js.json_data,
+                    js.created_at,
+                    js.updated_at,
+                    p.last_updated_by_user_id,
+                    u.display_name AS last_updated_by_display_name,
+                    u.email AS last_updated_by_email
+                 FROM json_schemas js
+                 LEFT JOIN projects p ON p.id = js.project_id
+                 LEFT JOIN users u ON u.id = p.last_updated_by_user_id
+                 WHERE js.project_id = ?`,
                 [projectId]
             );
             console.log('📊 Found rows:', rows.length);

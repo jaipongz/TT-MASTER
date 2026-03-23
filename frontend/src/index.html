@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JSON Code Generator</title>
+    <title>Prometheus - Code Generator</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsoneditor/9.9.0/jsoneditor.min.js"></script>
@@ -14,8 +15,21 @@
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="logo">
-                <i class="fas fa-code"></i>
-                <h2>JSON Generator</h2>
+                <img src="/favicon.png" alt="App icon" class="brand-logo-img">
+                <h2>Prometheus</h2>
+            </div>
+
+            <div class="sidebar-user" id="sidebar-user" style="display: none;">
+                <div class="user-badge">
+                    <i class="fas fa-user-circle"></i>
+                    <div>
+                        <div id="current-user-name" class="current-user-name">-</div>
+                        <div id="current-user-username" class="current-user-username">-</div>
+                    </div>
+                </div>
+                <button id="logout-btn" class="btn btn-sm btn-secondary logout-btn">
+                    <i class="fas fa-right-from-bracket"></i> ออกจากระบบ
+                </button>
             </div>
             
             <div class="sidebar-section">
@@ -26,6 +40,13 @@
                 <div id="projects-list" class="projects-list">
                     <!-- Projects will load here -->
                 </div>
+            </div>
+
+            <div class="sidebar-section" id="admin-section" style="display: none;">
+                <h3><i class="fas fa-users-cog"></i> User Management</h3>
+                <button id="user-management-btn" class="btn-new btn-admin">
+                    <i class="fas fa-user-shield"></i> จัดการผู้ใช้งาน
+                </button>
             </div>
             
             <div class="sidebar-footer">
@@ -49,6 +70,9 @@
                         <div class="card-header">
                             <h3>ข้อมูลโปรเจค</h3>
                             <div class="card-actions">
+                                <button id="manage-access-btn" class="btn btn-sm btn-secondary">
+                                    <i class="fas fa-user-shield"></i> จัดการสิทธิ์
+                                </button>
                                 <button id="edit-project-btn" class="btn btn-sm">
                                     <i class="fas fa-edit"></i> แก้ไข
                                 </button>
@@ -62,6 +86,7 @@
                             <p id="project-desc-display">คำอธิบายโปรเจค</p>
                             <div class="project-meta">
                                 <span><i class="far fa-clock"></i> อัปเดตล่าสุด: <span id="project-updated"></span></span>
+                                <span><i class="fas fa-user-pen"></i> แก้ล่าสุดโดย: <span id="project-last-editor">-</span></span>
                                 <span id="last-saved-message" class="last-saved-message" style="display: none;">
                                     <i class="fas fa-check-circle"></i> บันทึกล่าสุด: <span id="last-saved-time"></span>
                                 </span>
@@ -165,6 +190,49 @@
                         <button type="submit" class="btn btn-primary">บันทึก</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="permission-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>จัดการสิทธิ์ผู้ใช้งาน</h3>
+                <button class="close-modal permission-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="grant-permission-form" class="grant-form">
+                    <div class="form-group">
+                        <label for="grant-email">Email ที่ต้องการให้สิทธิ์</label>
+                        <input id="grant-email" type="email" required placeholder="เช่น member01@example.com">
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input id="grant-can-edit" type="checkbox"> ให้สิทธิ์แก้ไข (Edit)
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">เพิ่ม/อัปเดตสิทธิ์</button>
+                </form>
+
+                <div class="permission-list-wrap">
+                    <h4>ผู้ที่เข้าถึงโปรเจ็กต์นี้</h4>
+                    <div id="permission-list" class="permission-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="lock-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>โปรเจ็กต์ถูกใช้งานอยู่</h3>
+            </div>
+            <div class="modal-body">
+                <p id="lock-message">โปรเจ็กต์นี้กำลังถูกแก้ไขโดยผู้ใช้อื่น</p>
+                <div class="form-actions">
+                    <button id="lock-cancel-btn" type="button" class="btn btn-secondary">Cancel</button>
+                    <button id="lock-takeover-btn" type="button" class="btn btn-danger">Takeover</button>
+                </div>
             </div>
         </div>
     </div>

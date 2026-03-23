@@ -1,12 +1,22 @@
-// Configuration
-const API_BASE_URL = '/api';
+const API_BASE_CANDIDATES = [
+    '/api',
+    `${window.location.protocol}//${window.location.hostname}:3090/api`,
+    `${window.location.protocol}//${window.location.hostname}:3000/api`
+];
+
+const THAI_TIMEZONE = 'Asia/Bangkok';
+
+let resolvedApiBaseUrl = localStorage.getItem('api_base_url') || API_BASE_CANDIDATES[0];
+
 let currentProject = null;
 let editor = null;
-let saveTimeout = null;
+let authToken = localStorage.getItem('auth_token') || null;
+let currentUser = null;
 let hasUnsavedChanges = false;
 let autoRefreshTimeout = null;
+let lockHeartbeatInterval = null;
+let activeLockProjectId = null;
 
-// DOM Elements
 const elements = {
     themeToggle: document.getElementById('theme-toggle'),
     newProjectBtn: document.getElementById('new-project-btn'),
@@ -18,38 +28,230 @@ const elements = {
     projectInfoSection: document.getElementById('project-info-section'),
     editorSection: document.getElementById('editor-section'),
     welcomeSection: document.getElementById('welcome-section'),
-    saveBtn: document.getElementById('save-btn'), // ตำแหน่งใหม่
+    saveBtn: document.getElementById('save-btn'),
     validateBtn: document.getElementById('validate-btn'),
     formatBtn: document.getElementById('format-btn'),
     clearBtn: document.getElementById('clear-btn'),
     editProjectBtn: document.getElementById('edit-project-btn'),
     deleteProjectBtn: document.getElementById('delete-project-btn'),
+    manageAccessBtn: document.getElementById('manage-access-btn'),
     getStartedBtn: document.getElementById('get-started-btn'),
     projectNameDisplay: document.getElementById('project-name-display'),
     projectDescDisplay: document.getElementById('project-desc-display'),
     projectUpdated: document.getElementById('project-updated'),
+    projectLastEditor: document.getElementById('project-last-editor'),
     lastSavedMessage: document.getElementById('last-saved-message'),
     lastSavedTime: document.getElementById('last-saved-time'),
     saveIndicator: document.getElementById('save-indicator'),
     saveMessage: document.getElementById('save-message'),
     saveStatus: document.getElementById('save-status'),
-    notificationArea: document.getElementById('notification-area')
+    notificationArea: document.getElementById('notification-area'),
+
+    sidebarUser: document.getElementById('sidebar-user'),
+    currentUserName: document.getElementById('current-user-name'),
+    currentUserUsername: document.getElementById('current-user-username'),
+    logoutBtn: document.getElementById('logout-btn'),
+
+    adminSection: document.getElementById('admin-section'),
+    userManagementBtn: document.getElementById('user-management-btn'),
+
+    permissionModal: document.getElementById('permission-modal'),
+    permissionClose: document.querySelector('.permission-close'),
+    grantPermissionForm: document.getElementById('grant-permission-form'),
+    grantEmailInput: document.getElementById('grant-email'),
+    grantCanEdit: document.getElementById('grant-can-edit'),
+    permissionList: document.getElementById('permission-list'),
+
+    lockModal: document.getElementById('lock-modal'),
+    lockMessage: document.getElementById('lock-message'),
+    lockCancelBtn: document.getElementById('lock-cancel-btn'),
+    lockTakeoverBtn: document.getElementById('lock-takeover-btn')
 };
 
-// Initialize
 document.addEventListener('DOMContentLoaded', initApp);
 
 async function initApp() {
     loadTheme();
     setupEventListeners();
-    await loadProjects();
     initJSONEditor();
-    
-    // ซ่อนปุ่มบันทึกในหน้าแรก
     elements.saveBtn.style.display = 'none';
+
+    if (!authToken) {
+        redirectToLogin();
+        return;
+    }
+
+    await restoreSession();
 }
 
-// Theme Management
+function setupEventListeners() {
+    elements.themeToggle.addEventListener('click', () => {
+        const newTheme = document.body.classList.contains('dark-theme') ? 'light' : 'dark';
+        setTheme(newTheme);
+    });
+
+    elements.newProjectBtn.addEventListener('click', () => showProjectModal());
+    elements.getStartedBtn.addEventListener('click', () => showProjectModal());
+
+    elements.closeModalBtns.forEach((btn) => {
+        btn.addEventListener('click', closeModal);
+    });
+
+    elements.projectModal.addEventListener('click', (e) => {
+        if (e.target === elements.projectModal) {
+            closeModal();
+        }
+    });
+
+    elements.projectForm.addEventListener('submit', handleProjectSubmit);
+
+    elements.saveBtn.addEventListener('click', saveJSON);
+    elements.validateBtn.addEventListener('click', validateJSON);
+    elements.formatBtn.addEventListener('click', formatJSON);
+    elements.clearBtn.addEventListener('click', clearJSON);
+
+    elements.editProjectBtn.addEventListener('click', () => {
+        if (currentProject) {
+            showProjectModal(currentProject);
+        }
+    });
+
+    elements.deleteProjectBtn.addEventListener('click', deleteProject);
+    elements.manageAccessBtn.addEventListener('click', openPermissionModal);
+
+    elements.logoutBtn.addEventListener('click', logout);
+
+    elements.grantPermissionForm.addEventListener('submit', grantPermission);
+    elements.permissionClose.addEventListener('click', closePermissionModal);
+    elements.permissionModal.addEventListener('click', (e) => {
+        if (e.target === elements.permissionModal) {
+            closePermissionModal();
+        }
+    });
+
+    elements.userManagementBtn.addEventListener('click', () => {
+        window.location.href = '/user-management.html';
+    });
+
+    window.addEventListener('beforeunload', releaseLockOnUnload);
+}
+
+function redirectToLogin() {
+    window.location.href = '/login.html';
+}
+
+async function restoreSession() {
+    try {
+        const result = await apiFetch('/auth/me');
+        if (!result.success) {
+            throw new Error(result.error || 'Session expired');
+        }
+
+        setCurrentUser(result.data);
+        await loadProjects();
+    } catch (error) {
+        authToken = null;
+        currentUser = null;
+        localStorage.removeItem('auth_token');
+        redirectToLogin();
+    }
+}
+
+function setCurrentUser(user) {
+    currentUser = user;
+    elements.sidebarUser.style.display = 'block';
+    elements.currentUserName.textContent = user.display_name || user.email;
+    elements.currentUserUsername.textContent = user.email || '';
+    elements.adminSection.style.display = isSeededAdmin(user) ? 'block' : 'none';
+    applyRoleVisibility();
+}
+
+function applyRoleVisibility() {
+    const isAdmin = Boolean(currentUser && currentUser.is_admin);
+
+    elements.newProjectBtn.style.display = isAdmin ? 'flex' : 'none';
+    elements.deleteProjectBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+    elements.clearBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+    elements.manageAccessBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+    elements.getStartedBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+}
+
+function isSeededAdmin(user) {
+    return Boolean(user && user.is_admin && String(user.username || '').toLowerCase() === 'admin');
+}
+
+async function logout() {
+    try {
+        await releaseCurrentLock();
+        if (authToken) {
+            await apiFetch('/auth/logout', { method: 'POST' });
+        }
+    } catch (error) {
+        console.error('Logout error:', error);
+    } finally {
+        authToken = null;
+        currentUser = null;
+        localStorage.removeItem('auth_token');
+        redirectToLogin();
+    }
+}
+
+async function apiFetch(path, options = {}, requireToken = true) {
+    const candidates = [resolvedApiBaseUrl, ...API_BASE_CANDIDATES].filter(
+        (value, index, arr) => value && arr.indexOf(value) === index
+    );
+
+    let lastError = null;
+
+    for (const baseUrl of candidates) {
+        try {
+            const result = await apiFetchWithBase(baseUrl, path, options, requireToken);
+            resolvedApiBaseUrl = baseUrl;
+            localStorage.setItem('api_base_url', baseUrl);
+            return result;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+
+    throw lastError || new Error('API connection failed');
+}
+
+async function apiFetchWithBase(baseUrl, path, options = {}, requireToken = true) {
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+    };
+
+    if (requireToken) {
+        if (!authToken) {
+            throw new Error('Not authenticated');
+        }
+        headers.Authorization = `Bearer ${authToken}`;
+    }
+
+    const response = await fetch(`${baseUrl}${path}`, {
+        ...options,
+        headers
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    const result = contentType.includes('application/json')
+        ? await response.json()
+        : { success: false, error: `Unexpected response (${response.status})` };
+
+    if (response.status === 404) {
+        throw new Error(`API not found at ${baseUrl}`);
+    }
+
+    if (response.status === 401) {
+        localStorage.removeItem('auth_token');
+        redirectToLogin();
+    }
+
+    return result;
+}
+
 function loadTheme() {
     const savedTheme = localStorage.getItem('theme') || 'light';
     setTheme(savedTheme);
@@ -58,75 +260,28 @@ function loadTheme() {
 function setTheme(theme) {
     document.body.className = `${theme}-theme`;
     localStorage.setItem('theme', theme);
-    
+
     const icon = elements.themeToggle.querySelector('i');
-    const text = elements.themeToggle.querySelector('span') || elements.themeToggle;
-    
     if (theme === 'dark') {
         icon.className = 'fas fa-sun';
-        if (text.tagName === 'BUTTON') {
-            elements.themeToggle.innerHTML = '<i class="fas fa-sun"></i> ธีมสว่าง';
-        }
+        elements.themeToggle.innerHTML = '<i class="fas fa-sun"></i> ธีมสว่าง';
     } else {
         icon.className = 'fas fa-moon';
-        if (text.tagName === 'BUTTON') {
-            elements.themeToggle.innerHTML = '<i class="fas fa-moon"></i> ธีมมืด';
-        }
+        elements.themeToggle.innerHTML = '<i class="fas fa-moon"></i> ธีมมืด';
     }
 }
 
-// Event Listeners
-function setupEventListeners() {
-    // Theme toggle
-    elements.themeToggle.addEventListener('click', () => {
-        const newTheme = document.body.classList.contains('dark-theme') ? 'light' : 'dark';
-        setTheme(newTheme);
-    });
-
-    // New project button
-    elements.newProjectBtn.addEventListener('click', () => showProjectModal());
-
-    // Modal
-    elements.closeModalBtns.forEach(btn => {
-        btn.addEventListener('click', closeModal);
-    });
-
-    elements.projectModal.addEventListener('click', (e) => {
-        if (e.target === elements.projectModal) closeModal();
-    });
-
-    // Project form
-    elements.projectForm.addEventListener('submit', handleProjectSubmit);
-
-    // Navigation buttons
-    elements.getStartedBtn.addEventListener('click', () => showProjectModal());
-    
-    // Editor buttons
-    elements.saveBtn.addEventListener('click', saveJSON);
-    elements.validateBtn.addEventListener('click', validateJSON);
-    elements.formatBtn.addEventListener('click', formatJSON);
-    elements.clearBtn.addEventListener('click', clearJSON);
-    elements.editProjectBtn.addEventListener('click', () => {
-        if (currentProject) showProjectModal(currentProject);
-    });
-    elements.deleteProjectBtn.addEventListener('click', deleteProject);
-}
-
-// Project Management
 async function loadProjects() {
     try {
         showLoading();
-        const response = await fetch(`${API_BASE_URL}/projects`);
-        const result = await response.json();
-        
+        const result = await apiFetch('/projects');
+
         if (result.success) {
             renderProjects(result.data);
         } else {
-            console.error('Failed to load projects:', result.error);
-            showNotification('error', 'ไม่สามารถโหลดโปรเจคได้', result.error);
+            showNotification('error', 'ไม่สามารถโหลดโปรเจคได้', result.error || 'เกิดข้อผิดพลาด');
         }
     } catch (error) {
-        console.error('Network error:', error);
         showNotification('error', 'เกิดข้อผิดพลาดในการเชื่อมต่อ', error.message);
     } finally {
         hideLoading();
@@ -135,24 +290,20 @@ async function loadProjects() {
 
 function renderProjects(projects) {
     elements.projectsList.innerHTML = '';
-    
-    if (projects.length === 0) {
-        elements.projectsList.innerHTML = `
-            <div class="empty-state">
-                <p>ยังไม่มีโปรเจค</p>
-            </div>
-        `;
+
+    if (!projects || projects.length === 0) {
+        elements.projectsList.innerHTML = '<div class="empty-state"><p>ยังไม่มีโปรเจคที่คุณเข้าถึงได้</p></div>';
         return;
     }
-    
-    projects.forEach(project => {
+
+    projects.forEach((project) => {
         const projectEl = document.createElement('div');
         projectEl.className = 'project-item';
         projectEl.dataset.id = project.id;
-        
+
         const date = new Date(project.updated_at || project.created_at);
         const dateStr = formatThaiDate(date);
-        
+
         projectEl.innerHTML = `
             <div>
                 <div class="project-name">${project.name}</div>
@@ -160,94 +311,215 @@ function renderProjects(projects) {
             </div>
             <i class="fas fa-chevron-right"></i>
         `;
-        
+
         projectEl.addEventListener('click', () => openProject(project));
         elements.projectsList.appendChild(projectEl);
     });
 }
 
-async function openProject(project) {
-    currentProject = project;
-    
-    // Update UI
-    document.querySelectorAll('.project-item').forEach(el => {
-        el.classList.remove('active');
-        if (el.dataset.id == project.id) el.classList.add('active');
-    });
-    
-    elements.pageTitle.textContent = project.name;
-    elements.projectNameDisplay.textContent = project.name;
-    elements.projectDescDisplay.textContent = project.description || 'ไม่มีคำอธิบาย';
-    elements.projectUpdated.textContent = formatThaiDate(new Date(project.updated_at || project.created_at));
-    
-    // Show sections
-    elements.welcomeSection.style.display = 'none';
-    elements.projectInfoSection.style.display = 'block';
-    elements.editorSection.style.display = 'block';
-    
-    // Show save button
-    elements.saveBtn.style.display = 'flex';
-    
-    // Reset save status
-    updateSaveStatus('saved', 'บันทึกแล้ว');
-    
-    // Load JSON data
-    await loadJSONData(project.id);
-}
-
-async function loadJSONData(projectId) {
+async function openProject(project, forceTakeover = false) {
     try {
         showLoading();
-        const response = await fetch(`${API_BASE_URL}/json/${projectId}`);
-        const result = await response.json();
-        
-        if (result.success) {
-            let jsonData = {};
-            if (result.data && result.data.json_data) {
-                try {
-                    jsonData = typeof result.data.json_data === 'string' 
-                        ? JSON.parse(result.data.json_data)
-                        : result.data.json_data;
-                    
-                    // Update last saved time
-                    if (result.data.updated_at) {
-                        const savedTime = formatThaiTime(new Date(result.data.updated_at));
-                        elements.lastSavedTime.textContent = savedTime;
-                        elements.lastSavedMessage.style.display = 'flex';
-                    }
-                } catch (e) {
-                    console.error('Invalid JSON data:', e);
-                    jsonData = { error: "Invalid JSON in database" };
-                    showNotification('warning', 'ข้อมูล JSON ไม่ถูกต้อง', 'กรุณาตรวจสอบข้อมูลใน database');
-                }
-            }
-            
-            if (editor) {
-                editor.set(jsonData);
-                updateSaveStatus('saved', 'บันทึกแล้ว');
-            }
-        } else {
-            // No JSON data yet, set empty
-            if (editor) {
-                editor.set({});
-                updateSaveStatus('unsaved', 'ยังไม่ได้บันทึก');
-            }
+
+        if (currentProject && Number(currentProject.id) !== Number(project.id)) {
+            await releaseCurrentLock();
         }
+
+        const lockResult = await acquireLock(project.id, forceTakeover);
+        if (!lockResult.ok && lockResult.takeover) {
+            hideLoading();
+            return openProject(project, true);
+        }
+
+        if (!lockResult.ok) {
+            hideLoading();
+            return;
+        }
+
+        currentProject = project;
+        activeLockProjectId = Number(project.id);
+        startLockHeartbeat();
+
+        document.querySelectorAll('.project-item').forEach((el) => {
+            el.classList.remove('active');
+            if (Number(el.dataset.id) === Number(project.id)) {
+                el.classList.add('active');
+            }
+        });
+
+        elements.pageTitle.textContent = project.name;
+        elements.projectNameDisplay.textContent = project.name;
+        elements.projectDescDisplay.textContent = project.description || 'ไม่มีคำอธิบาย';
+        elements.projectUpdated.textContent = formatThaiDate(new Date(project.updated_at || project.created_at));
+        elements.projectLastEditor.textContent = project.last_updated_by_display_name || project.last_updated_by_email || '-';
+
+        elements.welcomeSection.style.display = 'none';
+        elements.projectInfoSection.style.display = 'block';
+        elements.editorSection.style.display = 'block';
+        elements.saveBtn.style.display = 'flex';
+
+        updateSaveStatus('saved', 'บันทึกแล้ว');
+        await loadJSONData(project.id);
     } catch (error) {
-        console.error('Failed to load JSON:', error);
-        showNotification('error', 'ไม่สามารถโหลดข้อมูล JSON ได้', error.message);
+        showNotification('error', 'เปิดโปรเจคไม่สำเร็จ', error.message);
     } finally {
         hideLoading();
     }
 }
 
-// Project Modal
+async function acquireLock(projectId, force = false) {
+    const result = await apiFetch(`/projects/${projectId}/lock`, {
+        method: 'POST',
+        body: JSON.stringify({ force })
+    });
+
+    if (result.success) {
+        return { ok: true };
+    }
+
+    if (result.conflict) {
+        const takeover = await showLockConflictModal(result.conflict);
+        if (takeover) {
+            return { ok: false, takeover: true };
+        }
+        return { ok: false, takeover: false };
+    }
+
+    throw new Error(result.error || 'Lock failed');
+}
+
+function showLockConflictModal(conflict) {
+    return new Promise((resolve) => {
+        const lockedAt = conflict.lockedAt ? formatThaiTime(new Date(conflict.lockedAt)) : '-';
+        elements.lockMessage.textContent = `โปรเจ็กต์นี้กำลังถูกใช้งานโดย ${conflict.username} (เริ่มล็อกเวลา ${lockedAt})`;
+        elements.lockModal.classList.add('active');
+
+        const onCancel = () => {
+            cleanup(false);
+        };
+        const onTakeover = () => {
+            cleanup(true);
+        };
+
+        function cleanup(result) {
+            elements.lockModal.classList.remove('active');
+            elements.lockCancelBtn.removeEventListener('click', onCancel);
+            elements.lockTakeoverBtn.removeEventListener('click', onTakeover);
+            resolve(result);
+        }
+
+        elements.lockCancelBtn.addEventListener('click', onCancel);
+        elements.lockTakeoverBtn.addEventListener('click', onTakeover);
+    });
+}
+
+function startLockHeartbeat() {
+    stopLockHeartbeat();
+
+    lockHeartbeatInterval = setInterval(async () => {
+        if (!activeLockProjectId) {
+            return;
+        }
+
+        const result = await apiFetch(`/projects/${activeLockProjectId}/lock/heartbeat`, {
+            method: 'POST',
+            body: JSON.stringify({})
+        });
+
+        if (!result.success) {
+            showToastNotification('warning', 'เสียสิทธิ์ lock โปรเจ็กต์นี้แล้ว');
+            stopLockHeartbeat();
+        }
+    }, 15000);
+}
+
+function stopLockHeartbeat() {
+    if (lockHeartbeatInterval) {
+        clearInterval(lockHeartbeatInterval);
+        lockHeartbeatInterval = null;
+    }
+}
+
+async function releaseCurrentLock() {
+    if (!activeLockProjectId) {
+        return;
+    }
+
+    try {
+        await apiFetch(`/projects/${activeLockProjectId}/lock`, {
+            method: 'DELETE',
+            body: JSON.stringify({})
+        });
+    } catch (error) {
+        console.error('Release lock error:', error);
+    }
+
+    activeLockProjectId = null;
+    stopLockHeartbeat();
+}
+
+function releaseLockOnUnload() {
+    if (!activeLockProjectId || !authToken) {
+        return;
+    }
+
+    fetch(`${resolvedApiBaseUrl}/projects/${activeLockProjectId}/lock`, {
+        method: 'DELETE',
+        headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({}),
+        keepalive: true
+    });
+}
+
+async function loadJSONData(projectId) {
+    try {
+        const result = await apiFetch(`/json/${projectId}`);
+
+        if (result.success) {
+            let jsonData = {};
+            if (result.data && result.data.json_data) {
+                jsonData = typeof result.data.json_data === 'string'
+                    ? JSON.parse(result.data.json_data)
+                    : result.data.json_data;
+
+                if (result.data.updated_at) {
+                    elements.lastSavedTime.textContent = formatThaiTime(new Date(result.data.updated_at));
+                    elements.lastSavedMessage.style.display = 'flex';
+                }
+
+                if (result.data.last_updated_by_display_name || result.data.last_updated_by_email) {
+                    elements.projectLastEditor.textContent = result.data.last_updated_by_display_name || result.data.last_updated_by_email;
+                }
+            } else {
+                elements.lastSavedMessage.style.display = 'none';
+            }
+
+            editor.set(jsonData);
+            updateSaveStatus('saved', 'บันทึกแล้ว');
+            hasUnsavedChanges = false;
+        } else {
+            editor.set({});
+            updateSaveStatus('unsaved', 'ยังไม่ได้บันทึก');
+        }
+    } catch (error) {
+        showNotification('error', 'ไม่สามารถโหลดข้อมูล JSON ได้', error.message);
+    }
+}
+
 function showProjectModal(project = null) {
+    if (!currentUser || !currentUser.is_admin) {
+        showToastNotification('warning', 'เฉพาะ admin เท่านั้นที่สามารถสร้างโปรเจคได้');
+        return;
+    }
+
     const modalTitle = document.getElementById('modal-title');
     const projectId = document.getElementById('project-id');
     const projectName = document.getElementById('project-name');
     const projectDesc = document.getElementById('project-description');
-    
+
     if (project) {
         modalTitle.textContent = 'แก้ไขโปรเจค';
         projectId.value = project.id;
@@ -259,7 +531,7 @@ function showProjectModal(project = null) {
         projectName.value = '';
         projectDesc.value = '';
     }
-    
+
     elements.projectModal.classList.add('active');
 }
 
@@ -270,53 +542,47 @@ function closeModal() {
 
 async function handleProjectSubmit(e) {
     e.preventDefault();
-    
+
+    if (!currentUser || !currentUser.is_admin) {
+        showNotification('error', 'ไม่มีสิทธิ์', 'เฉพาะ admin เท่านั้นที่สามารถสร้างโปรเจคได้');
+        return;
+    }
+
     const projectId = document.getElementById('project-id').value;
     const name = document.getElementById('project-name').value.trim();
     const description = document.getElementById('project-description').value.trim();
-    
+
     if (!name) {
         showNotification('error', 'กรุณากรอกชื่อโปรเจค', 'ชื่อโปรเจคเป็นฟิลด์ที่จำเป็น');
         return;
     }
-    
-    const projectData = { name, description };
-    const url = projectId ? `${API_BASE_URL}/projects/${projectId}` : `${API_BASE_URL}/projects`;
+
+    const url = projectId ? `/projects/${projectId}` : '/projects';
     const method = projectId ? 'PUT' : 'POST';
-    
+
     try {
         showLoading();
-        const response = await fetch(url, {
+        const result = await apiFetch(url, {
             method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(projectData)
+            body: JSON.stringify({ name, description })
         });
-        
-        const result = await response.json();
-        
+
         if (result.success) {
             closeModal();
             await loadProjects();
-            
-            // If new project, open it
+
             if (!projectId && result.data) {
-                openProject(result.data);
+                const detail = await apiFetch(`/projects/${result.data.id}`);
+                if (detail.success && detail.data) {
+                    await openProject(detail.data);
+                }
             }
-            
-            showNotification('success', 
-                projectId ? 'แก้ไขโปรเจคสำเร็จ' : 'สร้างโปรเจคสำเร็จ', 
-                projectId ? 'โปรเจคถูกอัปเดตแล้ว' : 'โปรเจคใหม่ถูกสร้างแล้ว'
-            );
-            
-            // Show toast notification
-            showToastNotification('success', 
-                projectId ? '✓ แก้ไขโปรเจคสำเร็จ' : '✓ สร้างโปรเจคสำเร็จ'
-            );
+
+            showToastNotification('success', projectId ? '✓ แก้ไขโปรเจคสำเร็จ' : '✓ สร้างโปรเจคสำเร็จ');
         } else {
             showNotification('error', 'เกิดข้อผิดพลาด', result.error || 'ไม่สามารถบันทึกโปรเจคได้');
         }
     } catch (error) {
-        console.error('Save project error:', error);
         showNotification('error', 'ไม่สามารถบันทึกโปรเจคได้', error.message);
     } finally {
         hideLoading();
@@ -324,28 +590,29 @@ async function handleProjectSubmit(e) {
 }
 
 async function deleteProject() {
-    if (!currentProject || !confirm('คุณต้องการลบโปรเจคนี้ใช่หรือไม่? การลบจะไม่สามารถย้อนกลับได้')) return;
-    
+    if (!currentUser || !currentUser.is_admin) {
+        showNotification('error', 'ไม่มีสิทธิ์', 'เฉพาะ admin เท่านั้นที่สามารถลบโปรเจคได้');
+        return;
+    }
+
+    if (!currentProject || !confirm('คุณต้องการลบโปรเจคนี้ใช่หรือไม่? การลบจะไม่สามารถย้อนกลับได้')) {
+        return;
+    }
+
     try {
         showLoading();
-        const response = await fetch(`${API_BASE_URL}/projects/${currentProject.id}`, {
-            method: 'DELETE'
-        });
-        
-        const result = await response.json();
-        
+        const result = await apiFetch(`/projects/${currentProject.id}`, { method: 'DELETE' });
+
         if (result.success) {
+            await releaseCurrentLock();
             currentProject = null;
             showWelcomeScreen();
             await loadProjects();
-            
-            showNotification('success', 'ลบโปรเจคสำเร็จ', 'โปรเจคถูกลบออกจากระบบแล้ว');
             showToastNotification('success', '✓ ลบโปรเจคสำเร็จ');
         } else {
-            showNotification('error', 'ไม่สามารถลบโปรเจคได้', result.error);
+            showNotification('error', 'ไม่สามารถลบโปรเจคได้', result.error || 'เกิดข้อผิดพลาด');
         }
     } catch (error) {
-        console.error('Delete error:', error);
         showNotification('error', 'เกิดข้อผิดพลาดในการลบ', error.message);
     } finally {
         hideLoading();
@@ -357,44 +624,34 @@ function showWelcomeScreen() {
     elements.projectInfoSection.style.display = 'none';
     elements.editorSection.style.display = 'none';
     elements.pageTitle.textContent = 'JSON Code Generator';
-    
-    // ซ่อนปุ่มบันทึก
     elements.saveBtn.style.display = 'none';
-    
-    document.querySelectorAll('.project-item').forEach(el => {
-        el.classList.remove('active');
-    });
+
+    document.querySelectorAll('.project-item').forEach((el) => el.classList.remove('active'));
 }
 
-// JSON Editor
 function initJSONEditor() {
     const container = document.getElementById('jsoneditor');
     const options = {
         mode: 'tree',
         modes: ['tree', 'code', 'form'],
-        onError: (err) => {
-            console.error('JSONEditor error:', err);
+        onError: () => {
             updateSaveStatus('error', 'JSON ไม่ถูกต้อง');
         },
         onChange: () => {
-            // เมื่อมีการเปลี่ยนแปลงใน editor
             hasUnsavedChanges = true;
             updateSaveStatus('unsaved', 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก');
-        },
-        onModeChange: (newMode, oldMode) => {
-            console.log('Mode changed:', oldMode, '->', newMode);
         }
     };
-    
+
     editor = new JSONEditor(container, options);
     editor.set({
-        "project": "โปรเจคใหม่ของคุณ",
-        "version": "1.0.0",
-        "description": "นี่คือ JSON เริ่มต้น",
-        "data": {
-            "ตัวอย่าง": "แก้ไขข้อมูลนี้",
-            "array": [1, 2, 3],
-            "boolean": true
+        project: 'โปรเจคใหม่ของคุณ',
+        version: '1.0.0',
+        description: 'นี่คือ JSON เริ่มต้น',
+        data: {
+            ตัวอย่าง: 'แก้ไขข้อมูลนี้',
+            array: [1, 2, 3],
+            boolean: true
         }
     });
 }
@@ -404,54 +661,40 @@ async function saveJSON() {
         showNotification('error', 'กรุณาเลือกโปรเจคก่อนบันทึก', 'โปรดเลือกโปรเจคจากเมนูด้านซ้าย');
         return;
     }
-    
+
     try {
         updateSaveStatus('saving', 'กำลังบันทึก...');
-        
-        const jsonData = editor.get();
-        const jsonString = JSON.stringify(jsonData, null, 2);
-        
-        console.log('📤 Saving JSON for project:', currentProject.id);
-        
-        const response = await fetch(`${API_BASE_URL}/json/save`, {
+        const jsonString = JSON.stringify(editor.get(), null, 2);
+
+        const result = await apiFetch('/json/save', {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
             body: JSON.stringify({
                 projectId: currentProject.id,
                 jsonData: jsonString
             })
         });
-        
-        const result = await response.json();
-        
+
         if (result.success) {
-            // อัปเดตสถานะ
             hasUnsavedChanges = false;
             updateSaveStatus('saved', 'บันทึกแล้ว');
-            
-            // อัปเดตเวลาบันทึกล่าสุด
-            const now = new Date();
-            elements.lastSavedTime.textContent = formatThaiTime(now);
+            elements.lastSavedTime.textContent = formatThaiTime(new Date());
             elements.lastSavedMessage.style.display = 'flex';
-            
-            // แสดง notification
-            showNotification('success', 'บันทึก JSON สำเร็จ', 'ข้อมูลถูกบันทึกลงในฐานข้อมูลแล้ว');
-            
-            // แสดง toast notification
+            elements.projectLastEditor.textContent = currentUser?.display_name || currentUser?.email || '-';
+            elements.projectUpdated.textContent = formatThaiDate(new Date());
             showToastNotification('success', '✓ บันทึก JSON สำเร็จ');
-            
-            // Auto refresh โปรเจคลิสต์หลังจากบันทึก
             autoRefreshProjects();
-            
+        } else if (result.conflict) {
+            showNotification(
+                'warning',
+                'ไม่สามารถบันทึกได้',
+                `โปรเจ็กต์นี้ถูก lock โดย ${result.conflict.username}`
+            );
+            updateSaveStatus('error', 'บันทึกไม่สำเร็จ');
         } else {
             updateSaveStatus('error', 'บันทึกไม่สำเร็จ');
-            showNotification('error', 'ไม่สามารถบันทึก JSON ได้', result.error);
+            showNotification('error', 'ไม่สามารถบันทึก JSON ได้', result.error || 'เกิดข้อผิดพลาด');
         }
     } catch (error) {
-        console.error('❌ Save error:', error);
         updateSaveStatus('error', 'เกิดข้อผิดพลาด');
         showNotification('error', 'เกิดข้อผิดพลาดในการบันทึก', error.message);
     }
@@ -459,7 +702,7 @@ async function saveJSON() {
 
 function validateJSON() {
     try {
-        const json = editor.get();
+        editor.get();
         showNotification('success', 'JSON ถูกต้อง!', 'โครงสร้าง JSON ถูกต้องตามมาตรฐาน');
         updateSaveStatus('saved', 'JSON ถูกต้อง');
     } catch (error) {
@@ -471,7 +714,7 @@ function validateJSON() {
 function formatJSON() {
     try {
         const json = editor.get();
-        editor.set(json); // This will reformat
+        editor.set(json);
         showNotification('success', 'จัดรูปแบบสำเร็จ', 'JSON ถูกจัดรูปแบบใหม่แล้ว');
     } catch (error) {
         showNotification('error', 'ไม่สามารถจัดรูปแบบได้', error.message);
@@ -479,6 +722,11 @@ function formatJSON() {
 }
 
 function clearJSON() {
+    if (!currentUser || !currentUser.is_admin) {
+        showToastNotification('warning', 'เฉพาะ admin เท่านั้นที่สามารถล้าง JSON ได้');
+        return;
+    }
+
     if (confirm('คุณต้องการล้าง JSON ทั้งหมดใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
         editor.set({});
         updateSaveStatus('unsaved', 'มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก');
@@ -486,38 +734,112 @@ function clearJSON() {
     }
 }
 
-// Save Status Management
-function updateSaveStatus(status, message) {
-    const indicator = elements.saveIndicator;
-    const msgElement = elements.saveMessage;
-    
-    // ลบ class ก่อนหน้า
-    indicator.className = 'save-indicator';
-    indicator.classList.add(status);
-    
-    // อัปเดตข้อความ
-    msgElement.textContent = message;
-    
-    // แสดง/ซ่อน status container
-    if (status === 'saved' && message === 'บันทึกแล้ว') {
-        elements.saveStatus.style.opacity = '0.7';
-    } else {
-        elements.saveStatus.style.opacity = '1';
+async function openPermissionModal() {
+    if (!currentUser || !currentUser.is_admin) {
+        showToastNotification('warning', 'เฉพาะ admin เท่านั้นที่สามารถจัดการสิทธิ์ได้');
+        return;
+    }
+
+    if (!currentProject) {
+        return;
+    }
+
+    try {
+        showLoading();
+        const result = await apiFetch(`/projects/${currentProject.id}/permissions`);
+        if (!result.success) {
+            showNotification('error', 'ไม่สามารถโหลดสิทธิ์ได้', result.error || 'เกิดข้อผิดพลาด');
+            return;
+        }
+
+        renderPermissionList(result.data || []);
+        elements.permissionModal.classList.add('active');
+    } catch (error) {
+        showNotification('error', 'ไม่สามารถโหลดสิทธิ์ได้', error.message);
+    } finally {
+        hideLoading();
     }
 }
 
-// Notification System
+function closePermissionModal() {
+    elements.permissionModal.classList.remove('active');
+}
+
+function renderPermissionList(rows) {
+    if (!rows.length) {
+        elements.permissionList.innerHTML = '<p class="empty-permission">ยังไม่มีผู้ใช้อื่นที่ได้รับสิทธิ์</p>';
+        return;
+    }
+
+    elements.permissionList.innerHTML = rows.map((row) => {
+        const canEditBadge = row.can_edit
+            ? '<span class="permission-badge edit">Edit</span>'
+            : '<span class="permission-badge view">View</span>';
+
+        return `
+            <div class="permission-item">
+                <div>
+                    <div class="permission-user">${row.display_name} (${row.email || row.username})</div>
+                    <div class="permission-meta">${canEditBadge}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function grantPermission(e) {
+    e.preventDefault();
+
+    if (!currentProject) {
+        return;
+    }
+
+    const email = elements.grantEmailInput.value.trim().toLowerCase();
+    const canEdit = elements.grantCanEdit.checked;
+
+    if (!email) {
+        showToastNotification('warning', 'กรุณาระบุ email');
+        return;
+    }
+
+    try {
+        const result = await apiFetch(`/projects/${currentProject.id}/permissions/grant`, {
+            method: 'POST',
+            body: JSON.stringify({ email, canEdit })
+        });
+
+        if (result.success) {
+            showToastNotification('success', 'อัปเดตสิทธิ์สำเร็จ');
+            elements.grantEmailInput.value = '';
+            elements.grantCanEdit.checked = false;
+            await openPermissionModal();
+        } else {
+            showToastNotification('error', result.error || 'ไม่สามารถอัปเดตสิทธิ์ได้');
+        }
+    } catch (error) {
+        showToastNotification('error', error.message);
+    }
+}
+
+function updateSaveStatus(status, message) {
+    const indicator = elements.saveIndicator;
+    indicator.className = 'save-indicator';
+    indicator.classList.add(status);
+    elements.saveMessage.textContent = message;
+    elements.saveStatus.style.opacity = (status === 'saved' && message === 'บันทึกแล้ว') ? '0.7' : '1';
+}
+
 function showNotification(type, title, message) {
     const notification = document.createElement('div');
     notification.className = `notification ${type}`;
-    
+
     const icons = {
         success: 'fa-check-circle',
         error: 'fa-exclamation-circle',
         warning: 'fa-exclamation-triangle',
         info: 'fa-info-circle'
     };
-    
+
     notification.innerHTML = `
         <i class="fas ${icons[type]}"></i>
         <div class="notification-content">
@@ -528,17 +850,14 @@ function showNotification(type, title, message) {
             <i class="fas fa-times"></i>
         </button>
     `;
-    
+
     elements.notificationArea.appendChild(notification);
-    
-    // Add close functionality
-    const closeBtn = notification.querySelector('.notification-close');
-    closeBtn.addEventListener('click', () => {
+
+    notification.querySelector('.notification-close').addEventListener('click', () => {
         notification.style.animation = 'slideIn 0.3s ease reverse';
         setTimeout(() => notification.remove(), 300);
     });
-    
-    // Auto remove after 5 seconds
+
     setTimeout(() => {
         if (notification.parentNode) {
             notification.style.animation = 'slideIn 0.3s ease reverse';
@@ -550,21 +869,16 @@ function showNotification(type, title, message) {
 function showToastNotification(type, message) {
     const toast = document.createElement('div');
     toast.className = `toast-notification ${type}`;
-    
+
     const icons = {
         success: 'fa-check-circle',
         error: 'fa-exclamation-circle',
         warning: 'fa-exclamation-triangle'
     };
-    
-    toast.innerHTML = `
-        <i class="fas ${icons[type]}"></i>
-        <span>${message}</span>
-    `;
-    
+
+    toast.innerHTML = `<i class="fas ${icons[type]}"></i><span>${message}</span>`;
     document.body.appendChild(toast);
-    
-    // Auto remove after 3 seconds
+
     setTimeout(() => {
         if (toast.parentNode) {
             toast.remove();
@@ -572,36 +886,28 @@ function showToastNotification(type, message) {
     }, 3000);
 }
 
-// Auto Refresh Projects after save
 function autoRefreshProjects() {
-    // แสดง indicator
     const refreshIndicator = document.createElement('div');
     refreshIndicator.className = 'auto-refresh-indicator';
-    refreshIndicator.innerHTML = `
-        <i class="fas fa-sync-alt"></i>
-        <span>กำลังรีเฟรชรายการโปรเจค...</span>
-    `;
-    
+    refreshIndicator.innerHTML = '<i class="fas fa-sync-alt"></i><span>กำลังรีเฟรชรายการโปรเจค...</span>';
+
     elements.notificationArea.appendChild(refreshIndicator);
-    
-    // รอ 1.5 วินาทีแล้วโหลดใหม่
-    if (autoRefreshTimeout) clearTimeout(autoRefreshTimeout);
-    
+
+    if (autoRefreshTimeout) {
+        clearTimeout(autoRefreshTimeout);
+    }
+
     autoRefreshTimeout = setTimeout(async () => {
         await loadProjects();
-        refreshIndicator.innerHTML = `
-            <i class="fas fa-check-circle"></i>
-            <span>รีเฟรชรายการโปรเจคแล้ว</span>
-        `;
+        refreshIndicator.innerHTML = '<i class="fas fa-check-circle"></i><span>รีเฟรชรายการโปรเจคแล้ว</span>';
         refreshIndicator.style.color = 'var(--success-color)';
-        
         setTimeout(() => refreshIndicator.remove(), 2000);
-    }, 1500);
+    }, 1200);
 }
 
-// Utility Functions
 function formatThaiDate(date) {
     return date.toLocaleDateString('th-TH', {
+        timeZone: THAI_TIMEZONE,
         year: 'numeric',
         month: 'short',
         day: 'numeric'
@@ -610,21 +916,24 @@ function formatThaiDate(date) {
 
 function formatThaiTime(date) {
     return date.toLocaleTimeString('th-TH', {
+        timeZone: THAI_TIMEZONE,
+        hour12: false,
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit'
     });
 }
 
-// Loading Overlay
 function showLoading() {
-    if (!document.getElementById('loading-overlay')) {
-        const overlay = document.createElement('div');
-        overlay.id = 'loading-overlay';
-        overlay.className = 'loading-overlay';
-        overlay.innerHTML = '<div class="loading-spinner"></div>';
-        document.body.appendChild(overlay);
+    if (document.getElementById('loading-overlay')) {
+        return;
     }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'loading-overlay';
+    overlay.className = 'loading-overlay';
+    overlay.innerHTML = '<div class="loading-spinner"></div>';
+    document.body.appendChild(overlay);
 }
 
 function hideLoading() {
@@ -633,6 +942,3 @@ function hideLoading() {
         overlay.remove();
     }
 }
-
-// Make functions available globally
-window.openProject = openProject;
